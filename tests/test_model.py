@@ -114,6 +114,19 @@ def test_dspdf_derived_frame_writes_to_explicit_target():
     assert derived.target_store.schema.key.path[-1][0] == "DocSummary"
 
 
+def test_dspdf_write_to_sets_one_off_target():
+    model = dsp.dspdf(
+        kind="Doc",
+        schema=_schema(),
+        df=pd.DataFrame({"doc_id": ["a"], "group": ["g1"], "value": [1]}),
+    )
+    derived = model.derive(pd.DataFrame({"group": ["g1"], "value_sum": [1]}))
+
+    report = derived.write_to(schema=_summary_schema(), dry_run=True)
+
+    assert report.would_write == 1
+
+
 def test_dspdf_aggregate_marks_model_derived():
     model = dsp.dspdf(
         kind="Doc",
@@ -136,6 +149,31 @@ def test_dspdf_aggregate_marks_model_derived():
     assert summary.is_derived
     assert list(summary.df.columns) == ["group", "value_sum"]
     assert summary.df.sort_values("group")["value_sum"].tolist() == [3, 3]
+
+
+def test_dspdf_polars_aggregate_marks_model_derived():
+    pl = pytest.importorskip("polars")
+    model = dsp.dspdf(
+        kind="Doc",
+        schema=_schema(),
+        backend="polars",
+        df=pl.DataFrame(
+            {
+                "doc_id": ["a", "b", "c"],
+                "group": ["g1", "g1", "g2"],
+                "value": [1, 2, 3],
+            }
+        ),
+    )
+
+    summary = model.aggregate(
+        by=["group"],
+        metrics={"value": "sum"},
+        target_schema=_summary_schema(),
+    )
+
+    assert summary.is_derived
+    assert summary.df.sort("group")["value_sum"].to_list() == [3, 3]
 
 
 def test_dspdf_original_row_count_guard_blocks_source_shape_change():

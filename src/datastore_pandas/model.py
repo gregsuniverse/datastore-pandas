@@ -187,6 +187,42 @@ class DatastoreDataFrame:
             **kwargs,
         )
 
+    def plan_write_to(
+        self,
+        *,
+        kind: str | None = None,
+        schema: Schema | None = None,
+        mode: Literal["insert", "update", "upsert"] = "upsert",
+        properties: list[str] | None = None,
+        patch: bool = False,
+        skip_unchanged: bool = False,
+        **kwargs: Any,
+    ) -> WritePlan:
+        return self.with_target(kind=kind, schema=schema).plan_write(
+            mode=mode,
+            properties=properties,
+            patch=patch,
+            skip_unchanged=skip_unchanged,
+            **kwargs,
+        )
+
+    def write_to(
+        self,
+        *,
+        kind: str | None = None,
+        schema: Schema | None = None,
+        mode: Literal["insert", "update", "upsert"] = "upsert",
+        properties: list[str] | None = None,
+        skip_unchanged: bool = False,
+        **kwargs: Any,
+    ) -> WriteReport:
+        return self.with_target(kind=kind, schema=schema).write(
+            mode=mode,
+            properties=properties,
+            skip_unchanged=skip_unchanged,
+            **kwargs,
+        )
+
     def patch(
         self,
         *,
