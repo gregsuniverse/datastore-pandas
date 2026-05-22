@@ -7,7 +7,27 @@ future releases. Version entries describe repository history only.
 
 ## Unreleased
 
-No changes documented after 0.2.0.
+### Added
+
+- Added write planning primitives with dry-run reports, read-only write blocking,
+  skip-unchanged full writes, and skip-unchanged patch writes.
+- Added `dsp.kind(...)` / `DatastoreFrame`, an instantiated kind accessor that
+  binds schema, client, backend, namespace, ancestor, query defaults, read-only
+  state, batch size, and worker defaults.
+- Added pandas and Polars parity for write planning, dry-run writes, read-only
+  writes, and skip-unchanged writes.
+- Added `key_policy(...)` as a deterministic per-kind key helper over `KeySpec`.
+- Added `AuditPolicy` for custom `created_at`, `updated_at`, and `imported_at`
+  field population before planning/writing.
+- Added bound-ancestor write validation for instantiated accessors.
+- Added logical duplicate cleanup planning and explicit delete execution through
+  the instantiated accessor API.
+- Added examples and unit tests for the instantiated accessor and write policies.
+
+### Changed
+
+- Patch write key matching now compares namespace plus key path so package keys
+  and client keys still match when the client key includes a project partition.
 
 ## 0.2.0
 

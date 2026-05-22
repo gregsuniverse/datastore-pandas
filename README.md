@@ -26,6 +26,10 @@ shape of the package:
   ancestor queries, filters, orderings, and limits
 - batched writes with bounded concurrency
 - read-merge-write patch updates for partial DataFrames
+- dry-run write planning, read-only write blocking, and skip-unchanged writes
+- instantiated kind accessors for bound schema/client/query defaults
+- deterministic key-policy and audit timestamp helpers
+- logical duplicate cleanup planning and opt-in delete execution
 - a transaction helper for small read-modify-write workflows
 - index-planning helpers that produce `index.yaml`-style suggestions
 - emulator examples for local integration testing
@@ -333,9 +337,110 @@ The write path:
 - rejects duplicate complete keys in one commit
 - chunks writes into bounded batches
 
+For policy-aware writes, opt into planning:
+
+```python
+plan = dsp.plan_datastore_write(
+    df,
+    schema=schema,
+    skip_unchanged=True,
+)
+
+dry_report = dsp.to_datastore(df, schema=schema, dry_run=True)
+report = dsp.to_datastore(df, schema=schema, skip_unchanged=True)
+```
+
+`skip_unchanged=True` reads existing entities before writing. Full writes compare
+the effective replacement payload, so extra existing properties still count as a
+change. Patch writes compare only the patched properties.
+
 `insert` and `update` modes are represented in the API, but full correctness for
 those modes depends on the active Datastore batch backend exposing insert/update
 methods. `upsert` is the safest path in the initial scaffold.
+
+## Instantiated Kind Accessors
+
+`dsp.kind(...)` creates a bound accessor for one schema/kind. It is not a
+DataFrame subclass; it is a scoped Datastore accessor that returns and accepts
+pandas or Polars DataFrames.
+
+```python
+workouts = dsp.kind(
+    schema=schema,
+    client=client,
+    namespace="tenant-a",
+    filters=[("activity_type", "=", "run")],
+    backend="pandas",
+    read_only=False,
+)
+
+df = workouts.read(limit=1000)
+plan = workouts.plan_write(df, skip_unchanged=True)
+report = workouts.write(df, skip_unchanged=True)
+```
+
+Bound accessors can carry an ancestor scope:
+
+```python
+user_workouts = workouts.with_ancestor(
+    dsp.DatastoreKey(namespace="tenant-a", path=(("User", "sample-user"),))
+)
+```
+
+When an ancestor is bound, writes are validated so generated keys must stay under
+that ancestor path and namespace.
+
+For deterministic keys, `key_policy` is a convenience wrapper around `KeySpec`:
+
+```python
+schema = dsp.Schema(
+    kind="Workout",
+    key=dsp.key_policy(
+        "Workout",
+        id_field="workout_id",
+        namespace_field="tenant",
+        ancestors=[("User", "user_id")],
+    ),
+    properties={...},
+)
+```
+
+Accessors can also apply custom audit timestamp fields before planning/writing:
+
+```python
+workouts = dsp.kind(
+    schema=schema,
+    client=client,
+    audit=dsp.AuditPolicy(
+        created_at="created_at",
+        updated_at="updated_at",
+        imported_at="imported_at",
+    ),
+)
+```
+
+Logical duplicate cleanup is explicit and dry-run by default:
+
+```python
+plan = workouts.plan_duplicate_cleanup(
+    by=["external_id"],
+    order=["-updated_at"],
+)
+
+dry_report = workouts.cleanup_duplicates(
+    by=["external_id"],
+    order=["-updated_at"],
+)
+
+delete_report = workouts.cleanup_duplicates(
+    by=["external_id"],
+    order=["-updated_at"],
+    dry_run=False,
+)
+```
+
+This cleanup is for logical duplicates by property values. Datastore cannot store
+two entities with the same exact key.
 
 ## Patching Partial DataFrames
 
@@ -477,11 +582,14 @@ Important conversion rules:
 
 ```text
 src/datastore_pandas/
+  accessor.py      instantiated kind accessor API
+  audit.py         custom audit timestamp policies
   batches.py       batch planning and duplicate-key checks
   convert.py       row/entity conversion
   errors.py        package exceptions
   io.py            read_datastore, iter_datastore, to_datastore, patch_datastore
   keys.py          DatastoreKey, KeySpec, KeyPart
+  planning.py      dry-run, read-only, and skip-unchanged write planning
   polars.py        optional Polars adapter
   query.py         QuerySpec and index planning
   reports.py       write result reporting
@@ -491,6 +599,7 @@ src/datastore_pandas/
 
 examples/
   basic_usage.py
+  instantiated_accessor.py
   emulator/
     docker-compose.yml
     Dockerfile
