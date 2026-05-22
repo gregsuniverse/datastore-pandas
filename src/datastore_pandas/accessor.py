@@ -6,10 +6,11 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, Sequence
 
 from datastore_pandas.audit import AuditPolicy
+from datastore_pandas.batches import chunk_items
 from datastore_pandas.errors import SchemaError
 from datastore_pandas.keys import DatastoreKey
-from datastore_pandas.planning import WritePlan
-from datastore_pandas.reports import WriteReport
+from datastore_pandas.planning import WritePlan, _stable_value
+from datastore_pandas.reports import PlannedMutation, WriteReport, WriteResult
 from datastore_pandas.schema import Schema
 
 Backend = Literal["pandas", "polars"]
@@ -189,6 +190,84 @@ class DatastoreFrame:
             skip_unchanged=skip_unchanged,
         )
 
+    def plan_duplicate_cleanup(
+        self,
+        *,
+        by: Sequence[str],
+        frame: Any | None = None,
+        keep: Literal["first", "last"] = "first",
+        order: Sequence[str] = (),
+        filters: Sequence[tuple[str, str, Any]] | None = None,
+        limit: int | None = None,
+    ) -> WritePlan:
+        if not by:
+            raise SchemaError("Duplicate cleanup requires at least one grouping field.")
+        frame = (
+            frame
+            if frame is not None
+            else self.read(filters=filters, limit=limit, include_key=True)
+        )
+        rows = self._rows_from_frame(frame)
+        groups: dict[tuple[Any, ...], list[tuple[int, Any, dict[str, Any]]]] = {}
+        for row_position, (row_index, row) in enumerate(rows):
+            raw_key = row.get("__key__")
+            if not isinstance(raw_key, DatastoreKey):
+                raise SchemaError("Duplicate cleanup requires a __key__ DatastoreKey column.")
+            group_key = tuple(_stable_value(row.get(name)) for name in by)
+            groups.setdefault(group_key, []).append((row_position, row_index, row))
+
+        mutations: list[PlannedMutation] = []
+        for group_key, group_rows in groups.items():
+            if len(group_rows) < 2:
+                continue
+            ordered_rows = _order_duplicate_group(group_rows, order=order)
+            if keep == "last":
+                ordered_rows = list(reversed(ordered_rows))
+            elif keep != "first":
+                raise SchemaError("Duplicate cleanup keep must be 'first' or 'last'.")
+            for row_position, row_index, row in ordered_rows[1:]:
+                mutations.append(
+                    PlannedMutation(
+                        row_position=row_position,
+                        row_index=row_index,
+                        action="delete",
+                        key=row["__key__"],
+                        properties={name: row.get(name) for name in by},
+                        reason=f"duplicate group {group_key!r}",
+                    )
+                )
+        return WritePlan(tuple(mutations), operation="write", mode="upsert")
+
+    def cleanup_duplicates(
+        self,
+        *,
+        by: Sequence[str],
+        frame: Any | None = None,
+        keep: Literal["first", "last"] = "first",
+        order: Sequence[str] = (),
+        filters: Sequence[tuple[str, str, Any]] | None = None,
+        limit: int | None = None,
+        dry_run: bool = True,
+        read_only: bool | None = None,
+        batch_size: int | None = None,
+    ) -> WriteReport:
+        plan = self.plan_duplicate_cleanup(
+            by=by,
+            frame=frame,
+            keep=keep,
+            order=order,
+            filters=filters,
+            limit=limit,
+        )
+        active_read_only = self.read_only if read_only is None else read_only
+        if dry_run or active_read_only:
+            return plan.to_report(dry_run=dry_run, read_only=active_read_only)
+        return _delete_from_plan(
+            plan,
+            client=self.client,
+            batch_size=batch_size or self.batch_size,
+        )
+
     def with_scope(
         self,
         *,
@@ -219,6 +298,17 @@ class DatastoreFrame:
             from datastore_pandas import polars
 
             return polars
+        raise ValueError(f"Unsupported DataFrame backend: {self.backend!r}.")
+
+    def _rows_from_frame(self, frame: Any) -> list[tuple[Any, dict[str, Any]]]:
+        if self.backend == "pandas":
+            from datastore_pandas.io import _iter_rows
+
+            return list(_iter_rows(frame))
+        if self.backend == "polars":
+            from datastore_pandas.polars import _iter_rows
+
+            return list(_iter_rows(frame))
         raise ValueError(f"Unsupported DataFrame backend: {self.backend!r}.")
 
     def _prepare_frame(self, df: Any) -> Any:
@@ -315,3 +405,63 @@ def kind(
         batch_size=batch_size,
         max_workers=max_workers,
     )
+
+
+def _order_duplicate_group(
+    group_rows: list[tuple[int, Any, dict[str, Any]]],
+    *,
+    order: Sequence[str],
+) -> list[tuple[int, Any, dict[str, Any]]]:
+    ordered_rows = list(group_rows)
+    for field in reversed(order):
+        descending = field.startswith("-")
+        name = field[1:] if descending else field
+        ordered_rows.sort(
+            key=lambda item: _sortable_value(item[2].get(name)),
+            reverse=descending,
+        )
+    return ordered_rows
+
+
+def _sortable_value(value: Any) -> tuple[bool, Any]:
+    stable = _stable_value(value)
+    return (stable is None, stable)
+
+
+def _delete_from_plan(
+    plan: WritePlan,
+    *,
+    client: Any | None,
+    batch_size: int,
+) -> WriteReport:
+    from datastore_pandas.io import _get_client
+
+    active_client = _get_client(client)
+    report = WriteReport(planned=list(plan.mutations))
+    for chunk in chunk_items(plan.mutations, max_items=batch_size):
+        try:
+            with active_client.batch() as batch:
+                for mutation in chunk:
+                    if mutation.key is None:
+                        continue
+                    batch.delete(mutation.key.to_client_key(active_client))
+        except Exception as exc:
+            for mutation in chunk:
+                report.results.append(
+                    WriteResult(
+                        row_index=mutation.row_index,
+                        key=mutation.key,
+                        action="delete",
+                        error=str(exc),
+                    )
+                )
+            continue
+        for mutation in chunk:
+            report.results.append(
+                WriteResult(
+                    row_index=mutation.row_index,
+                    key=mutation.key,
+                    action="delete",
+                )
+            )
+    return report

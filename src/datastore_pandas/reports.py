@@ -24,7 +24,13 @@ class PlannedMutation:
 
     @property
     def should_write(self) -> bool:
-        return self.error is None and self.action in {"create", "update", "upsert", "patch"}
+        return self.error is None and self.action in {
+            "create",
+            "update",
+            "upsert",
+            "patch",
+            "delete",
+        }
 
 
 @dataclass(frozen=True)
