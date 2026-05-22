@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Sequence
 
+from datastore_pandas.audit import AuditPolicy
+from datastore_pandas.errors import SchemaError
 from datastore_pandas.keys import DatastoreKey
 from datastore_pandas.planning import WritePlan
 from datastore_pandas.reports import WriteReport
@@ -27,6 +29,8 @@ class DatastoreFrame:
     projection: Sequence[str] | None = None
     distinct_on: Sequence[str] | None = None
     read_only: bool = False
+    audit: AuditPolicy | None = None
+    enforce_ancestor: bool = True
     batch_size: int = 400
     max_workers: int = 1
 
@@ -106,8 +110,9 @@ class DatastoreFrame:
         skip_unchanged: bool = False,
         batch_size: int | None = None,
     ) -> WritePlan:
+        df = self._prepare_frame(df)
         adapter = self._adapter()
-        return adapter.plan_datastore_write(
+        plan = adapter.plan_datastore_write(
             df,
             schema=self.schema,
             client=self.client,
@@ -117,6 +122,8 @@ class DatastoreFrame:
             skip_unchanged=skip_unchanged,
             batch_size=batch_size or self.batch_size,
         )
+        self._validate_plan_scope(plan)
+        return plan
 
     def write(
         self,
@@ -130,6 +137,13 @@ class DatastoreFrame:
         read_only: bool | None = None,
         skip_unchanged: bool = False,
     ) -> WriteReport:
+        df = self._prepare_frame(df)
+        self._validate_frame_scope(
+            df,
+            mode=mode,
+            properties=properties,
+            batch_size=batch_size or self.batch_size,
+        )
         adapter = self._adapter()
         return adapter.to_datastore(
             df,
@@ -155,6 +169,13 @@ class DatastoreFrame:
         read_only: bool | None = None,
         skip_unchanged: bool = False,
     ) -> WriteReport:
+        df = self._prepare_frame(df)
+        self._validate_frame_scope(
+            df,
+            properties=properties,
+            patch=True,
+            batch_size=batch_size or self.batch_size,
+        )
         adapter = self._adapter()
         return adapter.patch_datastore(
             df,
@@ -175,6 +196,7 @@ class DatastoreFrame:
         ancestor: DatastoreKey | None = None,
         filters: Sequence[tuple[str, str, Any]] | None = None,
         read_only: bool | None = None,
+        audit: AuditPolicy | None = None,
     ) -> "DatastoreFrame":
         return replace(
             self,
@@ -182,6 +204,7 @@ class DatastoreFrame:
             ancestor=self.ancestor if ancestor is None else ancestor,
             filters=self.filters if filters is None else filters,
             read_only=self.read_only if read_only is None else read_only,
+            audit=self.audit if audit is None else audit,
         )
 
     def with_ancestor(self, ancestor: DatastoreKey) -> "DatastoreFrame":
@@ -197,6 +220,48 @@ class DatastoreFrame:
 
             return polars
         raise ValueError(f"Unsupported DataFrame backend: {self.backend!r}.")
+
+    def _prepare_frame(self, df: Any) -> Any:
+        if self.audit is None:
+            return df
+        return self.audit.apply_to_frame(df, backend=self.backend)
+
+    def _validate_frame_scope(
+        self,
+        df: Any,
+        *,
+        mode: Literal["insert", "update", "upsert"] = "upsert",
+        properties: list[str] | None = None,
+        patch: bool = False,
+        batch_size: int | None = None,
+    ) -> None:
+        if self.ancestor is None or not self.enforce_ancestor:
+            return
+        adapter = self._adapter()
+        plan = adapter.plan_datastore_write(
+            df,
+            schema=self.schema,
+            client=self.client,
+            mode=mode,
+            properties=properties,
+            patch=patch,
+            batch_size=batch_size or self.batch_size,
+        )
+        self._validate_plan_scope(plan)
+
+    def _validate_plan_scope(self, plan: WritePlan) -> None:
+        if self.ancestor is None or not self.enforce_ancestor:
+            return
+        ancestor_length = len(self.ancestor.path)
+        for mutation in plan.mutations:
+            if mutation.key is None:
+                continue
+            if mutation.key.namespace != self.ancestor.namespace:
+                raise SchemaError(
+                    "Write key namespace does not match the bound ancestor namespace."
+                )
+            if mutation.key.path[:ancestor_length] != self.ancestor.path:
+                raise SchemaError("Write key path is outside the bound ancestor path.")
 
     def _filters(
         self,
@@ -227,6 +292,8 @@ def kind(
     projection: Sequence[str] | None = None,
     distinct_on: Sequence[str] | None = None,
     read_only: bool = False,
+    audit: AuditPolicy | None = None,
+    enforce_ancestor: bool = True,
     batch_size: int = 400,
     max_workers: int = 1,
 ) -> DatastoreFrame:
@@ -243,6 +310,8 @@ def kind(
         projection=projection,
         distinct_on=distinct_on,
         read_only=read_only,
+        audit=audit,
+        enforce_ancestor=enforce_ancestor,
         batch_size=batch_size,
         max_workers=max_workers,
     )

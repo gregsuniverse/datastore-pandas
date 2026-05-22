@@ -222,11 +222,47 @@ class KeySpec:
         )
 
 
+def key_policy(
+    kind: str,
+    *,
+    id_field: str | None = None,
+    key_field: str | None = None,
+    id_kind: IdentifierKind = "name",
+    namespace: str | None = None,
+    namespace_field: str | None = None,
+    ancestors: Sequence[tuple[str, KeyPart | str | int]] = (),
+) -> KeySpec:
+    """Build a deterministic row-derived key policy for one kind.
+
+    `id_field` and `key_field` are aliases; `key_field` is provided for callers
+    that name their logical identifier separately from Datastore terminology.
+    """
+
+    source = id_field or key_field
+    if source is None:
+        raise KeyValidationError("key_policy requires id_field or key_field.")
+    path = [(ancestor_kind, _coerce_key_part(part)) for ancestor_kind, part in ancestors]
+    path.append((kind, KeyPart(source, kind=id_kind)))
+    return KeySpec(
+        path=path,
+        namespace=namespace,
+        namespace_source=namespace_field,
+    )
+
+
 def _path_from_flat_path(flat_path: Iterable[Any]) -> tuple[tuple[str, int | str | None], ...]:
     parts = tuple(flat_path)
     if len(parts) % 2:
         raise KeyValidationError("Datastore flat_path must contain kind/id pairs.")
     return tuple((str(parts[i]), parts[i + 1]) for i in range(0, len(parts), 2))
+
+
+def _coerce_key_part(value: KeyPart | str | int) -> KeyPart:
+    if isinstance(value, KeyPart):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return KeyPart(constant=value, kind="id")
+    return KeyPart(str(value), kind="name")
 
 
 def _is_missing(value: Any) -> bool:
