@@ -16,6 +16,14 @@ from datastore_pandas.io import (
     read_datastore,
     to_datastore,
 )
+from datastore_pandas.inference import (
+    InferredField,
+    MixedTypePolicy,
+    SchemaInferenceReport,
+    infer_schema,
+    infer_schema_from_frame,
+    infer_schema_from_records,
+)
 from datastore_pandas.keys import DatastoreKey, KeyPart, KeySpec, key_policy
 from datastore_pandas.model import DatastoreDataFrame, dspdf
 from datastore_pandas.planning import WritePlan
@@ -58,16 +66,19 @@ __all__ = [
     "GeoPoint",
     "GeoPointType",
     "IndexSuggestion",
+    "InferredField",
     "Int64Type",
     "KeyPart",
     "KeySpec",
     "KeyType",
     "KeyValidationError",
     "MissingPolicy",
+    "MixedTypePolicy",
     "QuerySpec",
     "QueryPlan",
     "Schema",
     "SchemaError",
+    "SchemaInferenceReport",
     "StringType",
     "TimestampType",
     "__version__",
@@ -80,6 +91,9 @@ __all__ = [
     "iter_datastore",
     "kind",
     "dspdf",
+    "infer_schema",
+    "infer_schema_from_frame",
+    "infer_schema_from_records",
     "key_policy",
     "patch_datastore",
     "plan_datastore_write",

@@ -8,6 +8,7 @@ from typing import Any, Literal, Mapping, Sequence
 
 from datastore_pandas.accessor import Backend, DatastoreFrame, kind as make_kind
 from datastore_pandas.errors import DerivedFrameWriteError, SchemaError
+from datastore_pandas.inference import MixedTypePolicy, SchemaInferenceReport, infer_schema
 from datastore_pandas.planning import WritePlan
 from datastore_pandas.reports import WriteReport
 from datastore_pandas.schema import Schema
@@ -25,6 +26,10 @@ class DatastoreDataFrame:
     is_derived: bool = False
     lineage: tuple[str, ...] = ()
     target_store: DatastoreFrame | None = None
+    infer_schema: bool = False
+    schema_report: SchemaInferenceReport | None = None
+    schema_sample_size: int = 1000
+    mixed_type_policy: MixedTypePolicy = "object"
 
     @property
     def schema(self) -> Schema:
@@ -53,15 +58,34 @@ class DatastoreDataFrame:
         keep_original: bool | None = None,
         **read_kwargs: Any,
     ) -> "DatastoreDataFrame":
-        frame = self.store.read(include_key=include_key, **read_kwargs)
+        store = self.store
+        schema_report = self.schema_report
+        if self.infer_schema:
+            from datastore_pandas.io import _get_client
+
+            client = _get_client(store.client)
+            schema_report = infer_schema(
+                kind=self.source_kind,
+                client=client,
+                namespace=read_kwargs.get("namespace", store.namespace),
+                filters=read_kwargs.get("filters", store.filters),
+                ancestor=read_kwargs.get("ancestor", store.ancestor),
+                sample_size=self.schema_sample_size,
+                key=store.schema.key,
+                mixed_type_policy=self.mixed_type_policy,
+            )
+            store = replace(store, client=client, schema=schema_report.schema)
+        frame = store.read(include_key=include_key, **read_kwargs)
         snapshot_enabled = self.keep_original if keep_original is None else keep_original
         return replace(
             self,
+            store=store,
             df=frame,
             original_df=_clone_frame(frame) if snapshot_enabled else None,
             keep_original=snapshot_enabled,
             loaded_at=datetime.now(timezone.utc),
             is_derived=False,
+            schema_report=schema_report,
         )
 
     def read(self, **kwargs: Any) -> Any:
@@ -268,15 +292,22 @@ class DatastoreDataFrame:
 def dspdf(
     *,
     kind: str | None = None,
-    schema: Schema,
+    schema: Schema | None = None,
     client: Any | None = None,
     backend: Backend = "pandas",
     df: Any | None = None,
     keep_original: bool = False,
+    infer_schema: bool = False,
+    schema_sample_size: int = 1000,
+    mixed_type_policy: MixedTypePolicy = "object",
     **store_kwargs: Any,
 ) -> DatastoreDataFrame:
     """Create a DataFrame-owning model for one Datastore kind."""
 
+    if schema is None:
+        if kind is None:
+            raise SchemaError("dspdf requires schema or kind.")
+        schema = Schema(kind=kind, strict=False)
     if kind is not None and schema.kind != kind:
         schema = _schema_with_kind(schema, kind)
     store = make_kind(
@@ -290,6 +321,9 @@ def dspdf(
         df=df,
         original_df=_clone_frame(df) if keep_original and df is not None else None,
         keep_original=keep_original,
+        infer_schema=infer_schema,
+        schema_sample_size=schema_sample_size,
+        mixed_type_policy=mixed_type_policy,
     )
 
 

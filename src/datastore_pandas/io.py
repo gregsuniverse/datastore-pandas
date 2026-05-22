@@ -10,6 +10,7 @@ from typing import Any, Iterable, Iterator, Literal, Sequence
 from datastore_pandas.batches import chunk_items, validate_unique_complete_keys
 from datastore_pandas.convert import entity_to_record, row_to_entity, to_client_datastore_value
 from datastore_pandas.errors import SchemaError
+from datastore_pandas.inference import infer_schema as infer_schema_for_query
 from datastore_pandas.keys import DatastoreKey
 from datastore_pandas.planning import WritePlan, plan_write_rows
 from datastore_pandas.query import QuerySpec
@@ -45,6 +46,8 @@ def read_datastore(
     limit: int | None = None,
     include_key: bool = False,
     chunksize: int | None = None,
+    infer_schema: bool = False,
+    schema_sample_size: int = 1000,
 ):
     """Read a Datastore query into a pandas DataFrame.
 
@@ -68,6 +71,8 @@ def read_datastore(
             limit=limit,
             include_key=include_key,
             chunksize=chunksize or 1000,
+            infer_schema=infer_schema,
+            schema_sample_size=schema_sample_size,
         )
     )
     if not frames:
@@ -90,10 +95,21 @@ def iter_datastore(
     limit: int | None = None,
     include_key: bool = False,
     chunksize: int = 1000,
+    infer_schema: bool = False,
+    schema_sample_size: int = 1000,
 ) -> Iterator[Any]:
     import pandas as pd
 
     client = _get_client(client)
+    if infer_schema and schema is None:
+        schema = infer_schema_for_query(
+            kind=kind,
+            client=client,
+            namespace=namespace,
+            filters=filters,
+            ancestor=ancestor,
+            sample_size=schema_sample_size,
+        ).schema
     spec = QuerySpec(
         kind=kind,
         namespace=namespace,
