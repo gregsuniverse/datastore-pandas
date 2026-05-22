@@ -27,6 +27,8 @@ from datastore_pandas.types import (
     TimestampType,
 )
 
+__version__ = "0.1.0"
+
 __all__ = [
     "ArrayType",
     "BlobType",
@@ -52,6 +54,7 @@ __all__ = [
     "SchemaError",
     "StringType",
     "TimestampType",
+    "__version__",
     "Transaction",
     "WriteReport",
     "WriteResult",
