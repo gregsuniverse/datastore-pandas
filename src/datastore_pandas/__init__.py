@@ -4,12 +4,14 @@ from datastore_pandas.errors import DatastorePandasError, KeyValidationError, Sc
 from datastore_pandas.io import (
     iter_datastore,
     patch_datastore,
+    plan_datastore_write,
     read_datastore,
     to_datastore,
 )
 from datastore_pandas.keys import DatastoreKey, KeyPart, KeySpec
+from datastore_pandas.planning import WritePlan
 from datastore_pandas.query import IndexSuggestion, QueryPlan, QuerySpec, plan_indexes
-from datastore_pandas.reports import WriteReport, WriteResult
+from datastore_pandas.reports import PlannedMutation, WriteAction, WriteReport, WriteResult
 from datastore_pandas.schema import Field, MissingPolicy, Schema
 from datastore_pandas.transaction import Transaction
 from datastore_pandas.types import (
@@ -56,10 +58,14 @@ __all__ = [
     "TimestampType",
     "__version__",
     "Transaction",
+    "PlannedMutation",
+    "WriteAction",
+    "WritePlan",
     "WriteReport",
     "WriteResult",
     "iter_datastore",
     "patch_datastore",
+    "plan_datastore_write",
     "plan_indexes",
     "read_datastore",
     "to_datastore",

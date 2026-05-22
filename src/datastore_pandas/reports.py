@@ -4,15 +4,37 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, Mapping
 
 from datastore_pandas.keys import DatastoreKey
+
+WriteAction = Literal["create", "update", "upsert", "patch", "skip", "delete", "error"]
+
+
+@dataclass(frozen=True)
+class PlannedMutation:
+    row_position: int
+    row_index: Any
+    action: WriteAction
+    key: DatastoreKey | None = None
+    properties: Mapping[str, Any] = field(default_factory=dict)
+    exclude_from_indexes: tuple[str, ...] = ()
+    reason: str | None = None
+    error: str | None = None
+
+    @property
+    def should_write(self) -> bool:
+        return self.error is None and self.action in {"create", "update", "upsert", "patch"}
 
 
 @dataclass(frozen=True)
 class WriteResult:
     row_index: Any
     key: DatastoreKey | None = None
+    action: WriteAction | None = None
+    skipped: bool = False
+    dry_run: bool = False
+    reason: str | None = None
     version: int | None = None
     create_time: datetime | None = None
     update_time: datetime | None = None
@@ -27,7 +49,10 @@ class WriteResult:
 @dataclass
 class WriteReport:
     results: list[WriteResult] = field(default_factory=list)
+    planned: list[PlannedMutation] = field(default_factory=list)
     index_updates: int = 0
+    dry_run: bool = False
+    read_only: bool = False
 
     @property
     def succeeded(self) -> int:
@@ -37,8 +62,17 @@ class WriteReport:
     def failed(self) -> int:
         return len(self.results) - self.succeeded
 
+    @property
+    def skipped(self) -> int:
+        return sum(result.skipped for result in self.results)
+
+    @property
+    def planned_writes(self) -> int:
+        return sum(mutation.should_write for mutation in self.planned)
+
     def extend(self, other: "WriteReport") -> None:
         self.results.extend(other.results)
+        self.planned.extend(other.planned)
         self.index_updates += other.index_updates
 
     def raise_for_errors(self) -> None:
