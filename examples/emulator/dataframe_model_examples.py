@@ -27,6 +27,7 @@ MODEL_SUMMARY_SCHEMA = dsp.Schema(
         "tenant": dsp.Field(dsp.StringType(), nullable=False),
         "group": dsp.Field(dsp.StringType(), nullable=False),
         "value_sum": dsp.Field(dsp.Int64Type(), nullable=False),
+        "modified_at": dsp.Field(dsp.TimestampType()),
     },
 )
 
@@ -60,7 +61,6 @@ def run(*, tenant: str = "model-tenant", backend: Backend = "pandas") -> None:
     summary = edited.aggregate(
         by=["tenant", "group"],
         metrics={"value": "sum"},
-        target_schema=MODEL_SUMMARY_SCHEMA,
     )
     try:
         summary.write(dry_run=True)
@@ -68,7 +68,8 @@ def run(*, tenant: str = "model-tenant", backend: Backend = "pandas") -> None:
     except dsp.DerivedFrameWriteError:
         print("derived model source write blocked")
 
-    summary_report = summary.write_to(schema=MODEL_SUMMARY_SCHEMA)
+    summary = summary.with_target(schema=MODEL_SUMMARY_SCHEMA)
+    summary_report = summary.write()
     summary_report.raise_for_errors()
     assert summary_report.wrote == 2
     loaded_summary = dsp.dspdf(
