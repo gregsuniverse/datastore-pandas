@@ -6,6 +6,6 @@ services:
     image: datastore-pandas-emulator:latest
     environment:
       DATASTORE_PROJECT_ID: datastore-pandas-emulator
+      JAVA_TOOL_OPTIONS: -Xms512m -Xmx4g
     ports:
       - "8081:8081"
-

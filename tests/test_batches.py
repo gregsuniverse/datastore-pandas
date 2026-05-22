@@ -16,4 +16,3 @@ def test_incomplete_keys_can_repeat_before_allocation():
     key = DatastoreKey(path=(("Doc", None),))
 
     validate_unique_complete_keys([key, key])
-

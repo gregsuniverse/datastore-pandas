@@ -19,4 +19,3 @@ class QueryValidationError(DatastorePandasError):
 
 class WriteConflictError(DatastorePandasError):
     """Raised when a compare-and-swap or transactional write detects a conflict."""
-

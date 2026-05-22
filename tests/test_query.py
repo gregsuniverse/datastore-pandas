@@ -5,7 +5,9 @@ from datastore_pandas.errors import QueryValidationError
 
 
 def test_projection_rejects_equality_filtered_property():
-    spec = QuerySpec(kind="Workout", filters=[("user_id", "=", "sample-user")], projection=["user_id"])
+    spec = QuerySpec(
+        kind="Workout", filters=[("user_id", "=", "sample-user")], projection=["user_id"]
+    )
 
     with pytest.raises(QueryValidationError):
         spec.validate()

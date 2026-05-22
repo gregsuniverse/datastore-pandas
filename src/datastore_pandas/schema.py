@@ -79,7 +79,9 @@ class Schema:
                     key_sources.add(self.key.namespace_source)
             unknown -= key_sources
             if unknown:
-                raise SchemaError(f"Unknown fields for strict schema: {', '.join(sorted(unknown))}.")
+                raise SchemaError(
+                    f"Unknown fields for strict schema: {', '.join(sorted(unknown))}."
+                )
 
     def encode_properties(
         self,

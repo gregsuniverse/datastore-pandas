@@ -214,7 +214,6 @@ def _polars():
         import polars as pl
     except ImportError as exc:
         raise ImportError(
-            "Polars support requires the optional extra: "
-            "pip install datastore-pandas[polars]"
+            "Polars support requires the optional extra: pip install datastore-pandas[polars]"
         ) from exc
     return pl

@@ -69,7 +69,9 @@ class DatastoreKey:
             "path": [
                 {
                     "kind": kind,
-                    "id": identifier if isinstance(identifier, int) and not isinstance(identifier, bool) else None,
+                    "id": identifier
+                    if isinstance(identifier, int) and not isinstance(identifier, bool)
+                    else None,
                     "name": identifier if isinstance(identifier, str) else None,
                 }
                 for kind, identifier in self.path
@@ -158,7 +160,9 @@ class KeyPart:
             try:
                 value = int(value)
             except (TypeError, ValueError) as exc:
-                raise KeyValidationError(f"Key ID source {self.source!r} must be int-like.") from exc
+                raise KeyValidationError(
+                    f"Key ID source {self.source!r} must be int-like."
+                ) from exc
             if value == 0:
                 raise KeyValidationError("Datastore numeric IDs must not be zero.")
             return value

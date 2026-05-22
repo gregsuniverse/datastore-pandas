@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Sequence
 
+from datastore_pandas.convert import to_client_datastore_value
 from datastore_pandas.errors import QueryValidationError
 from datastore_pandas.keys import DatastoreKey
 
@@ -32,9 +33,7 @@ class QuerySpec:
             and self.ancestor is not None
             and self.ancestor.namespace != self.namespace
         ):
-            raise QueryValidationError(
-                "Query namespace must match the ancestor key namespace."
-            )
+            raise QueryValidationError("Query namespace must match the ancestor key namespace.")
         if self.keys_only and self.projection:
             raise QueryValidationError("keys_only and projection cannot be used together.")
         inequality_props = {
@@ -73,7 +72,7 @@ class QuerySpec:
             distinct_on=tuple(self.distinct_on or ()),
         )
         for name, op, value in self.filters:
-            query.add_filter(name, op, value)
+            _add_filter(query, name, op, to_client_datastore_value(value, client))
         if self.keys_only:
             query.keys_only()
         return query
@@ -123,7 +122,9 @@ def plan_indexes(query: QuerySpec) -> QueryPlan:
 
     equality_props = [name for name, op, _ in query.filters if op == "="]
     range_props = [name for name, op, _ in query.filters if op != "="]
-    ordered_props = [(item.removeprefix("-"), "desc" if item.startswith("-") else "asc") for item in query.order]
+    ordered_props = [
+        (item.removeprefix("-"), "desc" if item.startswith("-") else "asc") for item in query.order
+    ]
 
     if query.projection:
         for name in query.projection:
@@ -148,12 +149,26 @@ def plan_indexes(query: QuerySpec) -> QueryPlan:
 
     if query.keys_only:
         warnings.append("keys_only queries usually do not need a projection/composite index plan.")
-    if any(name.endswith("_at") or name in {"created", "updated", "timestamp"} for name, _, _ in query.filters):
+    if any(
+        name.endswith("_at") or name in {"created", "updated", "timestamp"}
+        for name, _, _ in query.filters
+    ):
         warnings.append(
             "Monotonic timestamp indexes can hotspot under high write rates; shard or exempt when possible."
         )
 
     suggestions = ()
     if needs_composite and props:
-        suggestions = (IndexSuggestion(query.kind, tuple(props), ancestor=query.ancestor is not None),)
+        suggestions = (
+            IndexSuggestion(query.kind, tuple(props), ancestor=query.ancestor is not None),
+        )
     return QueryPlan(query, needs_composite, suggestions, tuple(warnings))
+
+
+def _add_filter(query: Any, name: str, op: FilterOp, value: Any) -> None:
+    try:
+        from google.cloud.datastore.query import PropertyFilter
+
+        query.add_filter(filter=PropertyFilter(name, op, value))
+    except TypeError:
+        query.add_filter(name, op, value)

@@ -6,11 +6,11 @@ through `datastore-pandas[polars]`. It is designed for Datastore's real executio
 model: indexed entity queries, key lookups, projections, cursor scans,
 transactions, and batched entity writes.
 
-It does not try to turn Datastore into BigQuery. BigQuery can expose a broad
-pandas-like API because it has SQL, columnar execution, joins, aggregations, and
-server-side query planning. Datastore is an operational NoSQL entity store. This
-package keeps that boundary explicit so DataFrame workflows remain convenient
-without hiding Datastore's limits.
+It does not try to turn Datastore into SQL or a general analytics engine.
+Datastore is an operational NoSQL entity store, so joins, aggregations, and broad
+server-side query planning are outside the package boundary. This package keeps
+that boundary explicit so DataFrame workflows remain convenient without hiding
+Datastore's limits.
 
 ## Current Status
 
@@ -39,14 +39,19 @@ metadata, and conflict details.
 
 ## License And Disclaimer
 
-This repository uses [The Unlicense](LICENSE), a public-domain-style dedication.
-The repository does not identify an owner and does not make ownership claims over
-the software.
+This repository uses
+[The Unlicense](https://github.com/gregsuniverse/datastore-pandas/blob/main/LICENSE),
+a public-domain-style dedication. The repository does not identify an owner and
+does not make ownership claims over the software.
 
 Before using, copying, modifying, or relying on this repository, read the
-[Disclaimer](DISCLAIMER.md). In short: this project is experimental, provided
-without warranty, not recommended for any particular use, not guaranteed to be
-maintained, and includes AI-generated or AI-assisted software and documentation.
+[Disclaimer](https://github.com/gregsuniverse/datastore-pandas/blob/main/DISCLAIMER.md).
+In short: this project is experimental, provided without warranty, not
+recommended for any particular use, not guaranteed to be maintained, and includes
+AI-generated or AI-assisted software and documentation.
+
+Release history is documented in the
+[Changelog](https://github.com/gregsuniverse/datastore-pandas/blob/main/CHANGELOG.md).
 
 ## Installation
 
@@ -69,6 +74,25 @@ When installed from a package index, use:
 python -m pip install datastore-pandas
 python -m pip install "datastore-pandas[polars]"
 ```
+
+The base package depends on `pandas` and `google-cloud-datastore`. The Polars
+adapter is optional and is installed with the `polars` extra.
+
+Minimum supported third-party versions:
+
+| Package | Minimum | Notes |
+|---|---:|---|
+| Python | `3.10` | Earlier Python versions are not supported. |
+| `google-cloud-datastore` | `2.20.0` | Required for all Datastore reads and writes. |
+| `pandas` | `2.0.0` | Required by the base package and timestamp conversion layer. |
+| `polars` | `1.0.0` | Optional; required only for `datastore_pandas.polars`. |
+| `pytest` | `8.0.0` | Test/dev extra only. |
+| `ruff` | `0.8.0` | Test/dev extra only. |
+
+The current local verification pass used Python 3.11 with
+`google-cloud-datastore 2.24.0`, `pandas 3.0.3`, `polars 1.40.1`, `pytest 9.0.3`,
+and `ruff 0.15.14`. For repeatable production or CI runs, pin exact dependency
+versions in your application environment.
 
 For local development against the emulator, no Google Cloud credentials are needed
 when `DATASTORE_EMULATOR_HOST` is set. For real Datastore mode projects, configure
@@ -403,10 +427,16 @@ The emulator examples include:
 - `public_divvy_ancestor_test.py`: downloads public Divvy bike-share trip data,
   loads `Dataset -> Station -> Ride` ancestor paths, and validates ancestor,
   projection, and keys-only queries
+- `large_linked_dataset.py`: loads a synthetic linked-kind dataset with
+  `Tenant -> LinkedUser -> LinkedSession -> LinkedEvent` ancestor paths and
+  `KeyType` references across `LinkedUser`, `LinkedDevice`, `LinkedSession`, and
+  `LinkedEvent`; the default local run uses 200,000 events, while
+  `--events 1000001` is available as a host-memory stress test
 
 The main examples accept `--backend pandas` or `--backend polars`.
 
-Full instructions are in [examples/emulator/README.md](examples/emulator/README.md).
+Full instructions are in the
+[emulator examples README](https://github.com/gregsuniverse/datastore-pandas/blob/main/examples/emulator/README.md).
 
 ## Type Mapping
 
@@ -441,7 +471,7 @@ Important conversion rules:
 - Omit nullable missing values by default to preserve sparse entities.
 - Use projection, keys-only, ancestor, and cursor-aware queries where appropriate.
 - Keep transactions explicit and small.
-- Use BigQuery or BigQuery DataFrames for analytics, joins, and broad scans.
+- Use a SQL or analytical database for analytics, joins, and broad scans.
 
 ## Repository Layout
 

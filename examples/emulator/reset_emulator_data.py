@@ -11,7 +11,16 @@ def reset(*, batch_size: int, namespaces: list[str]) -> None:
     ds = client()
     total = 0
     for namespace in namespaces:
-        for kind in ["Workout", "Counter", "Station", "Ride"]:
+        for kind in [
+            "Workout",
+            "Counter",
+            "Station",
+            "Ride",
+            "LinkedUser",
+            "LinkedDevice",
+            "LinkedSession",
+            "LinkedEvent",
+        ]:
             query = ds.query(kind=kind, namespace=None if namespace == "<default>" else namespace)
             query.keys_only()
             chunk = []
@@ -35,7 +44,11 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=400)
     parser.add_argument("--namespace", action="append", dest="namespaces")
     args = parser.parse_args()
-    reset(batch_size=args.batch_size, namespaces=args.namespaces or ["<default>", "tenant-a", "tenant-b"])
+    reset(
+        batch_size=args.batch_size,
+        namespaces=args.namespaces
+        or ["<default>", "tenant-a", "tenant-b", "divvy-public", "linked-large"],
+    )
 
 
 if __name__ == "__main__":

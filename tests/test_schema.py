@@ -56,9 +56,7 @@ def test_nullable_missing_values_are_omitted_by_default():
         },
     )
 
-    encoded, excluded = schema.encode_properties(
-        {"title": "present", "optional_note": pd.NA}
-    )
+    encoded, excluded = schema.encode_properties({"title": "present", "optional_note": pd.NA})
 
     assert encoded == {"title": "present"}
     assert excluded == []

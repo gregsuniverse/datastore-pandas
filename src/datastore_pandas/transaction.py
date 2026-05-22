@@ -57,4 +57,3 @@ class Transaction:
         from google.cloud import datastore
 
         return datastore.Client()
-

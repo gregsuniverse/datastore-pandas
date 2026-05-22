@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from time import sleep
 from typing import Any, Iterable, Iterator, Literal, Sequence
 
 from datastore_pandas.batches import chunk_items, validate_unique_complete_keys
-from datastore_pandas.convert import entity_to_record, row_to_entity
+from datastore_pandas.convert import entity_to_record, row_to_entity, to_client_datastore_value
 from datastore_pandas.errors import SchemaError
 from datastore_pandas.keys import DatastoreKey
 from datastore_pandas.query import QuerySpec
@@ -14,6 +15,8 @@ from datastore_pandas.reports import WriteReport, WriteResult
 from datastore_pandas.schema import Schema
 
 WriteMode = Literal["insert", "update", "upsert"]
+COMMIT_MAX_ATTEMPTS = 3
+COMMIT_RETRY_INITIAL_DELAY_SEC = 0.5
 
 
 def read_datastore(
@@ -188,7 +191,9 @@ def patch_datastore(
     report = WriteReport()
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(_patch_chunk, chunk, schema=schema, client=client, properties=properties)
+            executor.submit(
+                _patch_chunk, chunk, schema=schema, client=client, properties=properties
+            )
             for chunk in chunk_items(items, max_items=batch_size)
         ]
         for future in as_completed(futures):
@@ -221,16 +226,7 @@ def _commit_chunk(
         return report
 
     try:
-        with client.batch() as batch:
-            for entity in entities:
-                if mode == "insert":
-                    _batch_insert(batch, entity)
-                elif mode == "update":
-                    _batch_update(batch, entity)
-                elif mode == "upsert":
-                    batch.put(entity)
-                else:
-                    raise SchemaError(f"Unsupported write mode: {mode!r}.")
+        _commit_entities_with_retry(client, entities, mode=mode)
     except Exception as exc:
         for (row_index, _), _ in valid_rows:
             report.results.append(WriteResult(row_index=row_index, error=str(exc)))
@@ -256,7 +252,9 @@ def _patch_chunk(
     client_keys = [key.to_client_key(client) for _, key in rows]
     existing = client.get_multi(client_keys)
     existing_by_key = {
-        DatastoreKey.from_client_key(entity.key).to_json(): entity for entity in existing if entity is not None
+        DatastoreKey.from_client_key(entity.key).to_json(): entity
+        for entity in existing
+        if entity is not None
     }
 
     entities: list[Any] = []
@@ -265,6 +263,9 @@ def _patch_chunk(
         row_index, row = row_ref
         try:
             encoded, exclude_from_indexes = schema.encode_properties(row, properties=properties)
+            encoded = {
+                name: to_client_datastore_value(value, client) for name, value in encoded.items()
+            }
             entity = existing_by_key.get(key.to_json())
             if entity is None:
                 entity = datastore.Entity(
@@ -283,9 +284,7 @@ def _patch_chunk(
         return report
 
     try:
-        with client.batch() as batch:
-            for entity in entities:
-                batch.put(entity)
+        _commit_entities_with_retry(client, entities, mode="upsert")
     except Exception as exc:
         for (row_index, _), _ in valid_rows:
             report.results.append(WriteResult(row_index=row_index, error=str(exc)))
@@ -311,7 +310,51 @@ def _merge_excluded_indexes(entity: Any, exclude_from_indexes: list[str]) -> Non
 def _require_complete_keys(keys: Iterable[DatastoreKey], *, operation: str) -> None:
     incomplete = [key for key in keys if not key.is_complete]
     if incomplete:
-        raise SchemaError(f"{operation} requires complete keys; found {len(incomplete)} incomplete key(s).")
+        raise SchemaError(
+            f"{operation} requires complete keys; found {len(incomplete)} incomplete key(s)."
+        )
+
+
+def _commit_entities_with_retry(
+    client: Any,
+    entities: list[Any],
+    *,
+    mode: WriteMode,
+    max_attempts: int = COMMIT_MAX_ATTEMPTS,
+    initial_delay_sec: float = COMMIT_RETRY_INITIAL_DELAY_SEC,
+) -> None:
+    attempt = 1
+    while True:
+        try:
+            with client.batch() as batch:
+                for entity in entities:
+                    if mode == "insert":
+                        _batch_insert(batch, entity)
+                    elif mode == "update":
+                        _batch_update(batch, entity)
+                    elif mode == "upsert":
+                        batch.put(entity)
+                    else:
+                        raise SchemaError(f"Unsupported write mode: {mode!r}.")
+            return
+        except Exception as exc:
+            if mode != "upsert" or attempt >= max_attempts or not _is_retryable_commit_error(exc):
+                raise
+            sleep(initial_delay_sec * (2 ** (attempt - 1)))
+            attempt += 1
+
+
+def _is_retryable_commit_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    retryable_fragments = (
+        "deadline exceeded",
+        "goaway",
+        "unavailable",
+        "application error processing rpc",
+        "503",
+        "504",
+    )
+    return any(fragment in message for fragment in retryable_fragments)
 
 
 def _batch_insert(batch: Any, entity: Any) -> None:

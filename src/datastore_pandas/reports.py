@@ -46,4 +46,3 @@ class WriteReport:
         if errors:
             sample = "; ".join(result.error or "conflict detected" for result in errors[:3])
             raise RuntimeError(f"{len(errors)} Datastore write(s) failed: {sample}")
-

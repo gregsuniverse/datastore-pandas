@@ -23,7 +23,9 @@ python -m pip install -e ".[test,polars]"
 ```
 
 The examples default to `localhost:8081` and `datastore-pandas-emulator`, so those
-environment variables are mostly there to make the emulator target explicit.
+environment variables are mostly there to make the emulator target explicit. The
+Docker Compose file sets the emulator Java heap to 4 GB because the large linked
+dataset is intentionally a local stress test.
 
 ## Run the Full Flow
 
@@ -46,6 +48,7 @@ python examples\emulator\transaction_example.py --backend polars
 python examples\emulator\inspect_sparse_entities.py --limit 2000 --namespace tenant-a
 python examples\emulator\index_planning.py
 python examples\emulator\public_divvy_ancestor_test.py --backend polars --rows 50000 --workers 8
+python examples\emulator\large_linked_dataset.py --backend polars
 python examples\emulator\reset_emulator_data.py
 ```
 
@@ -90,4 +93,60 @@ The default run loads 50,000 public rows:
 ```powershell
 python examples\emulator\public_divvy_ancestor_test.py --rows 50000 --workers 8
 python examples\emulator\public_divvy_ancestor_test.py --backend polars --rows 50000 --workers 8
+```
+
+## Large Linked-Kind Test
+
+`large_linked_dataset.py` generates a synthetic linked-kind dataset without
+downloading external data. It writes this shape:
+
+```text
+Tenant(<tenant>)
+  LinkedUser(<user_id>)
+    LinkedSession(<session_id>)
+      LinkedEvent(<event_id>)
+
+Tenant(<tenant>)
+  LinkedDevice(<device_id>)
+```
+
+The rows also contain `KeyType` properties that point across kinds:
+
+- `LinkedDevice.assigned_user_key -> LinkedUser`
+- `LinkedSession.user_key -> LinkedUser`
+- `LinkedSession.device_key -> LinkedDevice`
+- `LinkedEvent.user_key -> LinkedUser`
+- `LinkedEvent.session_key -> LinkedSession`
+- `LinkedEvent.device_key -> LinkedDevice`
+
+The default run writes 1,000 users, 1,000 devices, 10,000 sessions, and 200,000
+events in chunks. It uses conservative local-emulator defaults (`--workers 4`,
+`--batch-size 100`) because very large concurrent emulator commits can be less
+stable than production Datastore. Docker Desktop must have enough memory
+available for the emulator heap:
+
+```powershell
+python examples\emulator\large_linked_dataset.py
+python examples\emulator\large_linked_dataset.py --backend polars
+```
+
+To scale the non-event entity counts higher, pass larger `--users`, `--devices`,
+and `--sessions` values explicitly.
+
+To attempt a million-event local stress run:
+
+```powershell
+python examples\emulator\large_linked_dataset.py --backend polars --events 1000001
+```
+
+On the local verification machine, the 200,000-event run completed successfully.
+The 1,000,001-event run exceeded the Firestore emulator Java heap even with the
+Compose file's 4 GB heap setting. Treat million-row emulator runs as host-memory
+stress tests, not as a guarantee that the local emulator can retain the full
+dataset.
+
+For a quick smoke test before a full load:
+
+```powershell
+python examples\emulator\large_linked_dataset.py --events 10000 --sessions 2500 --users 1000 --devices 1000
 ```

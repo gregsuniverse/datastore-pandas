@@ -49,4 +49,3 @@ def approximate_size(value: Any) -> int:
         return len(json.dumps(value, default=str).encode("utf-8"))
     except TypeError:
         return len(repr(value).encode("utf-8"))
-

@@ -13,7 +13,7 @@ SRC = ROOT / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-import datastore_pandas as dsp
+import datastore_pandas as dsp  # noqa: E402
 
 Backend = Literal["pandas", "polars"]
 BACKENDS = ("pandas", "polars")
@@ -89,7 +89,7 @@ def frame_from_records(records: list[dict[str, Any]], backend: Backend):
     if backend == "polars":
         import polars as pl
 
-        return pl.DataFrame(records, strict=False)
+        return pl.DataFrame(records, strict=False, infer_schema_length=None)
     import pandas as pd
 
     return pd.DataFrame.from_records(records)

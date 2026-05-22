@@ -37,4 +37,3 @@ def test_polars_missing_values_are_omitted_by_schema():
     encoded, _ = schema.encode_properties(row)
 
     assert encoded == {"doc_id": "a"}
-
