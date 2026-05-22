@@ -10,6 +10,7 @@ from generate_mock_data import generate_workouts
 from inspect_sparse_entities import run as inspect_sparse
 from load_mock_data import load
 from patch_sparse_rows import run as run_patch
+from policy_examples import run as run_policy_examples
 from query_examples import run as run_queries
 from transaction_example import run as run_transaction
 
@@ -43,6 +44,7 @@ def main() -> None:
         increments=5,
         backend=args.backend,
     )
+    run_policy_examples(tenant=f"{args.tenant}-policy", backend=args.backend)
     inspect_sparse(limit=min(args.rows, 2_000), namespace=args.tenant)
 
 

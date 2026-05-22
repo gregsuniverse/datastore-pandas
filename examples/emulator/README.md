@@ -45,6 +45,7 @@ python examples\emulator\load_mock_data.py --backend polars --input examples\emu
 python examples\emulator\query_examples.py --backend polars --user-id user-00042
 python examples\emulator\patch_sparse_rows.py --backend polars --user-id user-00042
 python examples\emulator\transaction_example.py --backend polars
+python examples\emulator\policy_examples.py --backend polars
 python examples\emulator\inspect_sparse_entities.py --limit 2000 --namespace tenant-a
 python examples\emulator\index_planning.py
 python examples\emulator\public_divvy_ancestor_test.py --backend polars --rows 50000 --workers 8
@@ -65,6 +66,28 @@ The generated `Workout` kind is intentionally heterogeneous:
 
 This is the important sparse-entity case: the DataFrame is rectangular, but the
 Datastore entities should not be forced to carry unused null-valued properties.
+
+## Instantiated Accessor And Write Policy Test
+
+`policy_examples.py` uses `dsp.kind(...)` against the emulator with a small
+`PolicyEvent` kind. It validates:
+
+- deterministic `key_policy(...)` keys with a `Tenant -> PolicyEvent` ancestor
+  path
+- custom audit timestamp fields through `AuditPolicy`
+- dry-run write planning without committing entities
+- read-only write blocking
+- skip-unchanged full writes
+- skip-unchanged patch writes
+- bound ancestor write-scope rejection
+- logical duplicate cleanup dry-run and explicit delete execution
+
+Run it with either DataFrame backend:
+
+```powershell
+python examples\emulator\policy_examples.py
+python examples\emulator\policy_examples.py --backend polars
+```
 
 ## Public Dataset Ancestor Test
 

@@ -4,6 +4,7 @@ from datastore_pandas.accessor import DatastoreFrame, kind
 from datastore_pandas.audit import AuditPolicy
 from datastore_pandas.errors import DatastorePandasError, KeyValidationError, SchemaError
 from datastore_pandas.io import (
+    CommitRetryPolicy,
     iter_datastore,
     patch_datastore,
     plan_datastore_write,
@@ -38,6 +39,7 @@ __all__ = [
     "AuditPolicy",
     "BlobType",
     "BoolType",
+    "CommitRetryPolicy",
     "DatastoreKey",
     "DatastoreFrame",
     "DatastorePandasError",

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from time import sleep
+from dataclasses import dataclass
+from time import perf_counter, sleep
 from typing import Any, Iterable, Iterator, Literal, Sequence
 
 from datastore_pandas.batches import chunk_items, validate_unique_complete_keys
@@ -16,8 +17,17 @@ from datastore_pandas.reports import WriteReport, WriteResult
 from datastore_pandas.schema import Schema
 
 WriteMode = Literal["insert", "update", "upsert"]
-COMMIT_MAX_ATTEMPTS = 3
-COMMIT_RETRY_INITIAL_DELAY_SEC = 0.5
+
+
+@dataclass(frozen=True)
+class CommitRetryPolicy:
+    initial: float = 2.0
+    multiplier: float = 2.0
+    deadline: float = 40.0
+    max_attempts: int | None = None
+
+
+DEFAULT_COMMIT_RETRY = CommitRetryPolicy()
 
 
 def read_datastore(
@@ -119,12 +129,17 @@ def to_datastore(
     dry_run: bool = False,
     read_only: bool = False,
     skip_unchanged: bool = False,
+    retry: Any = DEFAULT_COMMIT_RETRY,
 ) -> WriteReport:
     """Write a DataFrame to Datastore using schema-derived keys and typed values."""
 
     if schema.key is None and "__key__" not in df.columns:
         raise SchemaError("to_datastore requires schema.key or a __key__ column.")
-    client = _get_client(client)
+    client = (
+        _get_client(client)
+        if _write_requires_client(dry_run, read_only, skip_unchanged)
+        else client
+    )
     rows = list(_iter_rows(df))
     if dry_run or read_only or skip_unchanged:
         plan = plan_write_rows(
@@ -155,6 +170,7 @@ def to_datastore(
             properties=properties,
             batch_size=batch_size,
             max_workers=max_workers,
+            retry=retry,
         )
 
     if max_workers <= 1:
@@ -167,6 +183,7 @@ def to_datastore(
                     client=client,
                     mode=mode,
                     properties=properties,
+                    retry=retry,
                 )
             )
         return report
@@ -181,6 +198,7 @@ def to_datastore(
                 client=client,
                 mode=mode,
                 properties=properties,
+                retry=retry,
             )
             for chunk in chunk_items(items, max_items=batch_size)
         ]
@@ -200,6 +218,7 @@ def patch_datastore(
     dry_run: bool = False,
     read_only: bool = False,
     skip_unchanged: bool = False,
+    retry: Any = DEFAULT_COMMIT_RETRY,
 ) -> WriteReport:
     """Partially update Datastore entities by read-merge-write.
 
@@ -208,7 +227,11 @@ def patch_datastore(
     masks, replace this backend with a lower-level Datastore `Commit` call.
     """
 
-    client = _get_client(client)
+    client = (
+        _get_client(client)
+        if _write_requires_client(dry_run, read_only, skip_unchanged)
+        else client
+    )
     rows = list(_iter_rows(df))
     if dry_run or read_only or skip_unchanged:
         plan = plan_write_rows(
@@ -237,19 +260,29 @@ def patch_datastore(
             properties=properties,
             batch_size=batch_size,
             max_workers=max_workers,
+            retry=retry,
         )
 
     if max_workers <= 1:
         report = WriteReport()
         for chunk in chunk_items(items, max_items=batch_size):
-            report.extend(_patch_chunk(chunk, schema=schema, client=client, properties=properties))
+            report.extend(
+                _patch_chunk(
+                    chunk, schema=schema, client=client, properties=properties, retry=retry
+                )
+            )
         return report
 
     report = WriteReport()
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(
-                _patch_chunk, chunk, schema=schema, client=client, properties=properties
+                _patch_chunk,
+                chunk,
+                schema=schema,
+                client=client,
+                properties=properties,
+                retry=retry,
             )
             for chunk in chunk_items(items, max_items=batch_size)
         ]
@@ -275,7 +308,7 @@ def plan_datastore_write(
         raise SchemaError("plan_datastore_write requires schema.key or a __key__ column.")
     if patch and properties is None:
         raise SchemaError("patch planning requires an explicit properties list.")
-    client = _get_client(client)
+    client = _get_client(client) if skip_unchanged else client
     return plan_write_rows(
         list(_iter_rows(df)),
         schema=schema,
@@ -296,6 +329,12 @@ def _filter_rows_for_plan(
     return [row for row_position, row in enumerate(rows) if row_position in write_positions]
 
 
+def _write_requires_client(dry_run: bool, read_only: bool, skip_unchanged: bool) -> bool:
+    if skip_unchanged:
+        return True
+    return not (dry_run or read_only)
+
+
 def _write_with_planned_results(
     *,
     plan: WritePlan,
@@ -306,6 +345,7 @@ def _write_with_planned_results(
     properties: list[str] | None,
     batch_size: int,
     max_workers: int,
+    retry: Any,
 ) -> WriteReport:
     report = _report_for_non_writes(plan)
     report.extend(
@@ -317,6 +357,7 @@ def _write_with_planned_results(
             properties=properties,
             batch_size=batch_size,
             max_workers=max_workers,
+            retry=retry,
         )
     )
     return report
@@ -331,6 +372,7 @@ def _patch_with_planned_results(
     properties: list[str],
     batch_size: int,
     max_workers: int,
+    retry: Any,
 ) -> WriteReport:
     report = _report_for_non_writes(plan)
     report.extend(
@@ -341,6 +383,7 @@ def _patch_with_planned_results(
             properties=properties,
             batch_size=batch_size,
             max_workers=max_workers,
+            retry=retry,
         )
     )
     return report
@@ -373,6 +416,7 @@ def _write_items(
     properties: list[str] | None,
     batch_size: int,
     max_workers: int,
+    retry: Any,
 ) -> WriteReport:
     if max_workers <= 1:
         report = WriteReport()
@@ -384,6 +428,7 @@ def _write_items(
                     client=client,
                     mode=mode,
                     properties=properties,
+                    retry=retry,
                 )
             )
         return report
@@ -398,6 +443,7 @@ def _write_items(
                 client=client,
                 mode=mode,
                 properties=properties,
+                retry=retry,
             )
             for chunk in chunk_items(items, max_items=batch_size)
         ]
@@ -414,11 +460,16 @@ def _patch_items(
     properties: list[str],
     batch_size: int,
     max_workers: int,
+    retry: Any,
 ) -> WriteReport:
     if max_workers <= 1:
         report = WriteReport()
         for chunk in chunk_items(items, max_items=batch_size):
-            report.extend(_patch_chunk(chunk, schema=schema, client=client, properties=properties))
+            report.extend(
+                _patch_chunk(
+                    chunk, schema=schema, client=client, properties=properties, retry=retry
+                )
+            )
         return report
 
     report = WriteReport()
@@ -430,6 +481,7 @@ def _patch_items(
                 schema=schema,
                 client=client,
                 properties=properties,
+                retry=retry,
             )
             for chunk in chunk_items(items, max_items=batch_size)
         ]
@@ -445,6 +497,7 @@ def _commit_chunk(
     client: Any,
     mode: WriteMode,
     properties: list[str] | None,
+    retry: Any,
 ) -> WriteReport:
     report = WriteReport()
     rows = list(chunk)
@@ -463,7 +516,7 @@ def _commit_chunk(
         return report
 
     try:
-        _commit_entities_with_retry(client, entities, mode=mode)
+        _commit_entities_with_retry(client, entities, mode=mode, retry=retry)
     except Exception as exc:
         for (row_index, _), _ in valid_rows:
             report.results.append(WriteResult(row_index=row_index, error=str(exc)))
@@ -471,7 +524,7 @@ def _commit_chunk(
 
     for ((row_index, _), key), entity in zip(valid_rows, entities):
         written_key = DatastoreKey.from_client_key(entity.key) if hasattr(entity, "key") else key
-        report.results.append(WriteResult(row_index=row_index, key=written_key))
+        report.results.append(WriteResult(row_index=row_index, key=written_key, action=mode))
     return report
 
 
@@ -481,6 +534,7 @@ def _patch_chunk(
     schema: Schema,
     client: Any,
     properties: list[str],
+    retry: Any,
 ) -> WriteReport:
     from google.cloud import datastore
 
@@ -521,7 +575,7 @@ def _patch_chunk(
         return report
 
     try:
-        _commit_entities_with_retry(client, entities, mode="upsert")
+        _commit_entities_with_retry(client, entities, mode="upsert", retry=retry)
     except Exception as exc:
         for (row_index, _), _ in valid_rows:
             report.results.append(WriteResult(row_index=row_index, error=str(exc)))
@@ -529,7 +583,7 @@ def _patch_chunk(
 
     for ((row_index, _), key), entity in zip(valid_rows, entities):
         written_key = DatastoreKey.from_client_key(entity.key) if hasattr(entity, "key") else key
-        report.results.append(WriteResult(row_index=row_index, key=written_key))
+        report.results.append(WriteResult(row_index=row_index, key=written_key, action="patch"))
     return report
 
 
@@ -561,10 +615,12 @@ def _commit_entities_with_retry(
     entities: list[Any],
     *,
     mode: WriteMode,
-    max_attempts: int = COMMIT_MAX_ATTEMPTS,
-    initial_delay_sec: float = COMMIT_RETRY_INITIAL_DELAY_SEC,
+    retry: Any = DEFAULT_COMMIT_RETRY,
 ) -> None:
+    retry_policy = _coerce_commit_retry_policy(retry)
     attempt = 1
+    delay = retry_policy.initial
+    deadline_at = perf_counter() + retry_policy.deadline if retry_policy.deadline else None
     while True:
         try:
             with client.batch() as batch:
@@ -579,10 +635,60 @@ def _commit_entities_with_retry(
                         raise SchemaError(f"Unsupported write mode: {mode!r}.")
             return
         except Exception as exc:
-            if mode != "upsert" or attempt >= max_attempts or not _is_retryable_commit_error(exc):
+            if (
+                mode != "upsert"
+                or not _is_retryable_commit_error(exc)
+                or _retry_attempts_exhausted(attempt, retry_policy)
+            ):
                 raise
-            sleep(initial_delay_sec * (2 ** (attempt - 1)))
+            if deadline_at is not None:
+                remaining = deadline_at - perf_counter()
+                if remaining <= 0:
+                    raise
+                sleep(min(delay, remaining))
+            else:
+                sleep(delay)
             attempt += 1
+            delay *= retry_policy.multiplier
+
+
+def _coerce_commit_retry_policy(retry: Any) -> CommitRetryPolicy:
+    if retry is None:
+        return CommitRetryPolicy(max_attempts=1, deadline=0)
+    if isinstance(retry, CommitRetryPolicy):
+        return retry
+    return CommitRetryPolicy(
+        initial=float(
+            _retry_attr(retry, "initial", "_initial", default=DEFAULT_COMMIT_RETRY.initial)
+        ),
+        multiplier=float(
+            _retry_attr(retry, "multiplier", "_multiplier", default=DEFAULT_COMMIT_RETRY.multiplier)
+        ),
+        deadline=float(
+            _retry_attr(
+                retry,
+                "deadline",
+                "_deadline",
+                "timeout",
+                "_timeout",
+                default=DEFAULT_COMMIT_RETRY.deadline,
+            )
+        ),
+        max_attempts=_retry_attr(retry, "max_attempts", "_max_attempts", default=None),
+    )
+
+
+def _retry_attr(retry: Any, *names: str, default: Any) -> Any:
+    for name in names:
+        if hasattr(retry, name):
+            value = getattr(retry, name)
+            if not callable(value):
+                return value
+    return default
+
+
+def _retry_attempts_exhausted(attempt: int, retry_policy: CommitRetryPolicy) -> bool:
+    return retry_policy.max_attempts is not None and attempt >= retry_policy.max_attempts
 
 
 def _is_retryable_commit_error(exc: Exception) -> bool:

@@ -23,6 +23,9 @@ future releases. Version entries describe repository history only.
 - Added logical duplicate cleanup planning and explicit delete execution through
   the instantiated accessor API.
 - Added examples and unit tests for the instantiated accessor and write policies.
+- Added an emulator-backed policy example covering instantiated accessors,
+  dry-run/read-only writes, skip-unchanged writes, audit fields, bound ancestor
+  validation, and duplicate cleanup with pandas and Polars.
 
 ### Changed
 

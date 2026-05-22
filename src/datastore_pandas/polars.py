@@ -14,6 +14,7 @@ from datastore_pandas.batches import chunk_items, validate_unique_complete_keys
 from datastore_pandas.convert import entity_to_record
 from datastore_pandas.errors import SchemaError
 from datastore_pandas.io import (
+    DEFAULT_COMMIT_RETRY,
     WriteMode,
     _commit_chunk,
     _filter_rows_for_plan,
@@ -21,6 +22,7 @@ from datastore_pandas.io import (
     _patch_with_planned_results,
     _patch_chunk,
     _require_complete_keys,
+    _write_requires_client,
     _write_with_planned_results,
 )
 from datastore_pandas.keys import DatastoreKey
@@ -126,12 +128,17 @@ def to_datastore(
     dry_run: bool = False,
     read_only: bool = False,
     skip_unchanged: bool = False,
+    retry: Any = DEFAULT_COMMIT_RETRY,
 ) -> WriteReport:
     """Write a Polars DataFrame to Datastore."""
 
     if schema.key is None and "__key__" not in df.columns:
         raise SchemaError("to_datastore requires schema.key or a __key__ column.")
-    client = _get_client(client)
+    client = (
+        _get_client(client)
+        if _write_requires_client(dry_run, read_only, skip_unchanged)
+        else client
+    )
     rows = list(_iter_rows(df))
     if dry_run or read_only or skip_unchanged:
         plan = plan_write_rows(
@@ -162,6 +169,7 @@ def to_datastore(
             properties=properties,
             batch_size=batch_size,
             max_workers=max_workers,
+            retry=retry,
         )
 
     if max_workers <= 1:
@@ -174,6 +182,7 @@ def to_datastore(
                     client=client,
                     mode=mode,
                     properties=properties,
+                    retry=retry,
                 )
             )
         return report
@@ -188,6 +197,7 @@ def to_datastore(
                 client=client,
                 mode=mode,
                 properties=properties,
+                retry=retry,
             )
             for chunk in chunk_items(items, max_items=batch_size)
         ]
@@ -207,10 +217,15 @@ def patch_datastore(
     dry_run: bool = False,
     read_only: bool = False,
     skip_unchanged: bool = False,
+    retry: Any = DEFAULT_COMMIT_RETRY,
 ) -> WriteReport:
     """Partially update Datastore entities from a Polars DataFrame."""
 
-    client = _get_client(client)
+    client = (
+        _get_client(client)
+        if _write_requires_client(dry_run, read_only, skip_unchanged)
+        else client
+    )
     rows = list(_iter_rows(df))
     if dry_run or read_only or skip_unchanged:
         plan = plan_write_rows(
@@ -239,12 +254,17 @@ def patch_datastore(
             properties=properties,
             batch_size=batch_size,
             max_workers=max_workers,
+            retry=retry,
         )
 
     if max_workers <= 1:
         report = WriteReport()
         for chunk in chunk_items(items, max_items=batch_size):
-            report.extend(_patch_chunk(chunk, schema=schema, client=client, properties=properties))
+            report.extend(
+                _patch_chunk(
+                    chunk, schema=schema, client=client, properties=properties, retry=retry
+                )
+            )
         return report
 
     report = WriteReport()
@@ -256,6 +276,7 @@ def patch_datastore(
                 schema=schema,
                 client=client,
                 properties=properties,
+                retry=retry,
             )
             for chunk in chunk_items(items, max_items=batch_size)
         ]
@@ -281,7 +302,7 @@ def plan_datastore_write(
         raise SchemaError("plan_datastore_write requires schema.key or a __key__ column.")
     if patch and properties is None:
         raise SchemaError("patch planning requires an explicit properties list.")
-    client = _get_client(client)
+    client = _get_client(client) if skip_unchanged else client
     return plan_write_rows(
         list(_iter_rows(df)),
         schema=schema,

@@ -34,6 +34,7 @@ class DatastoreFrame:
     enforce_ancestor: bool = True
     batch_size: int = 400
     max_workers: int = 1
+    retry: Any | None = None
 
     @property
     def kind(self) -> str:
@@ -137,6 +138,7 @@ class DatastoreFrame:
         dry_run: bool = False,
         read_only: bool | None = None,
         skip_unchanged: bool = False,
+        retry: Any | None = None,
     ) -> WriteReport:
         df = self._prepare_frame(df)
         self._validate_frame_scope(
@@ -146,18 +148,22 @@ class DatastoreFrame:
             batch_size=batch_size or self.batch_size,
         )
         adapter = self._adapter()
-        return adapter.to_datastore(
-            df,
-            schema=self.schema,
-            client=self.client,
-            mode=mode,
-            properties=properties,
-            batch_size=batch_size or self.batch_size,
-            max_workers=max_workers or self.max_workers,
-            dry_run=dry_run,
-            read_only=self.read_only if read_only is None else read_only,
-            skip_unchanged=skip_unchanged,
-        )
+        kwargs = {
+            "df": df,
+            "schema": self.schema,
+            "client": self.client,
+            "mode": mode,
+            "properties": properties,
+            "batch_size": batch_size or self.batch_size,
+            "max_workers": max_workers or self.max_workers,
+            "dry_run": dry_run,
+            "read_only": self.read_only if read_only is None else read_only,
+            "skip_unchanged": skip_unchanged,
+        }
+        active_retry = retry if retry is not None else self.retry
+        if active_retry is not None:
+            kwargs["retry"] = active_retry
+        return adapter.to_datastore(**kwargs)
 
     def patch(
         self,
@@ -169,6 +175,7 @@ class DatastoreFrame:
         dry_run: bool = False,
         read_only: bool | None = None,
         skip_unchanged: bool = False,
+        retry: Any | None = None,
     ) -> WriteReport:
         df = self._prepare_frame(df)
         self._validate_frame_scope(
@@ -178,17 +185,21 @@ class DatastoreFrame:
             batch_size=batch_size or self.batch_size,
         )
         adapter = self._adapter()
-        return adapter.patch_datastore(
-            df,
-            schema=self.schema,
-            properties=properties,
-            client=self.client,
-            batch_size=batch_size or self.batch_size,
-            max_workers=max_workers or self.max_workers,
-            dry_run=dry_run,
-            read_only=self.read_only if read_only is None else read_only,
-            skip_unchanged=skip_unchanged,
-        )
+        kwargs = {
+            "df": df,
+            "schema": self.schema,
+            "properties": properties,
+            "client": self.client,
+            "batch_size": batch_size or self.batch_size,
+            "max_workers": max_workers or self.max_workers,
+            "dry_run": dry_run,
+            "read_only": self.read_only if read_only is None else read_only,
+            "skip_unchanged": skip_unchanged,
+        }
+        active_retry = retry if retry is not None else self.retry
+        if active_retry is not None:
+            kwargs["retry"] = active_retry
+        return adapter.patch_datastore(**kwargs)
 
     def plan_duplicate_cleanup(
         self,
@@ -276,6 +287,7 @@ class DatastoreFrame:
         filters: Sequence[tuple[str, str, Any]] | None = None,
         read_only: bool | None = None,
         audit: AuditPolicy | None = None,
+        retry: Any | None = None,
     ) -> "DatastoreFrame":
         return replace(
             self,
@@ -284,6 +296,7 @@ class DatastoreFrame:
             filters=self.filters if filters is None else filters,
             read_only=self.read_only if read_only is None else read_only,
             audit=self.audit if audit is None else audit,
+            retry=self.retry if retry is None else retry,
         )
 
     def with_ancestor(self, ancestor: DatastoreKey) -> "DatastoreFrame":
@@ -386,6 +399,7 @@ def kind(
     enforce_ancestor: bool = True,
     batch_size: int = 400,
     max_workers: int = 1,
+    retry: Any | None = None,
 ) -> DatastoreFrame:
     """Create a bound accessor for one schema/kind."""
 
@@ -404,6 +418,7 @@ def kind(
         enforce_ancestor=enforce_ancestor,
         batch_size=batch_size,
         max_workers=max_workers,
+        retry=retry,
     )
 
 

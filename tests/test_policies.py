@@ -87,6 +87,39 @@ def test_audit_policy_applies_custom_timestamp_fields_to_write_plan():
     assert report.planned[0].properties["modified"] == now
 
 
+def test_audit_policy_supports_created_and_modified_alias_fields():
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    schema = dsp.Schema(
+        kind="Doc",
+        key=dsp.key_policy("Doc", id_field="doc_id"),
+        properties={
+            "created": dsp.Field(dsp.TimestampType()),
+            "created_at": dsp.Field(dsp.TimestampType()),
+            "modified": dsp.Field(dsp.TimestampType()),
+            "modified_at": dsp.Field(dsp.TimestampType()),
+        },
+    )
+    store = dsp.kind(
+        schema=schema,
+        audit=dsp.AuditPolicy(
+            created="created",
+            created_at="created_at",
+            modified="modified",
+            modified_at="modified_at",
+            now=lambda: now,
+        ),
+    )
+
+    report = store.write(pd.DataFrame({"doc_id": ["a"]}), dry_run=True)
+
+    assert report.planned[0].properties == {
+        "created": now,
+        "created_at": now,
+        "modified": now,
+        "modified_at": now,
+    }
+
+
 def test_bound_ancestor_rejects_out_of_scope_writes():
     schema = dsp.Schema(
         kind="Workout",

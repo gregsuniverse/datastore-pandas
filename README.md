@@ -525,6 +525,9 @@ The emulator examples include:
 - `patch_sparse_rows.py`: patches a subset of properties without filling sparse
   entities with nulls
 - `transaction_example.py`: increments a counter transactionally
+- `policy_examples.py`: validates the instantiated accessor, dry-run/read-only
+  write policies, skip-unchanged writes, audit fields, bound ancestor validation,
+  and logical duplicate cleanup against the emulator
 - `inspect_sparse_entities.py`: inspects raw entities to confirm sparse properties
   are omitted
 - `index_planning.py`: prints index suggestions

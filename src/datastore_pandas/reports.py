@@ -76,6 +76,20 @@ class WriteReport:
     def planned_writes(self) -> int:
         return sum(mutation.should_write for mutation in self.planned)
 
+    @property
+    def would_write(self) -> int:
+        return self.planned_writes
+
+    @property
+    def wrote(self) -> int:
+        return sum(
+            result.ok
+            and not result.dry_run
+            and not result.skipped
+            and result.action in {"create", "update", "upsert", "patch", "delete"}
+            for result in self.results
+        )
+
     def extend(self, other: "WriteReport") -> None:
         self.results.extend(other.results)
         self.planned.extend(other.planned)

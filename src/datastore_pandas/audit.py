@@ -11,11 +11,17 @@ MissingMode = Literal["missing", "always", "never"]
 
 @dataclass(frozen=True)
 class AuditPolicy:
+    created: str | None = None
     created_at: str | None = None
+    modified: str | None = None
+    modified_at: str | None = None
     updated_at: str | None = None
     imported_at: str | None = None
     now: Callable[[], Any] = lambda: datetime.now(timezone.utc)
+    set_created: MissingMode = "missing"
     set_created_at: MissingMode = "missing"
+    set_modified: MissingMode = "always"
+    set_modified_at: MissingMode = "always"
     set_updated_at: MissingMode = "always"
     set_imported_at: MissingMode = "missing"
 
@@ -32,8 +38,14 @@ class AuditPolicy:
     def values(self) -> dict[str, tuple[Any, MissingMode]]:
         now = self.now()
         values: dict[str, tuple[Any, MissingMode]] = {}
+        if self.created:
+            values[self.created] = (now, self.set_created)
         if self.created_at:
             values[self.created_at] = (now, self.set_created_at)
+        if self.modified:
+            values[self.modified] = (now, self.set_modified)
+        if self.modified_at:
+            values[self.modified_at] = (now, self.set_modified_at)
         if self.updated_at:
             values[self.updated_at] = (now, self.set_updated_at)
         if self.imported_at:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 import datastore_pandas as dsp
+from datastore_pandas import io
 
 
 class FakeBatch:
@@ -74,6 +75,35 @@ def test_dry_run_captures_write_plan_without_committing():
     assert report.planned[0].action == "upsert"
     assert report.planned[0].properties == {"value": 1}
     assert report.results[0].dry_run is True
+    assert report.would_write == 1
+    assert report.wrote == 0
+
+
+def test_dry_run_does_not_construct_default_client(monkeypatch):
+    def fail_get_client(client):
+        raise AssertionError("client construction should not be needed")
+
+    monkeypatch.setattr(io, "_get_client", fail_get_client)
+    df = pd.DataFrame({"doc_id": ["a"], "value": [1]})
+
+    report = dsp.to_datastore(df, schema=_schema(), dry_run=True)
+    plan = dsp.plan_datastore_write(df, schema=_schema())
+
+    assert report.would_write == 1
+    assert plan.mutations[0].properties == {"value": 1}
+
+
+def test_read_only_does_not_construct_default_client(monkeypatch):
+    def fail_get_client(client):
+        raise AssertionError("client construction should not be needed")
+
+    monkeypatch.setattr(io, "_get_client", fail_get_client)
+    df = pd.DataFrame({"doc_id": ["a"], "value": [1]})
+
+    report = dsp.to_datastore(df, schema=_schema(), read_only=True)
+
+    assert report.read_only is True
+    assert report.failed == 1
 
 
 def test_skip_unchanged_write_commits_only_changed_entities():
@@ -86,6 +116,7 @@ def test_skip_unchanged_write_commits_only_changed_entities():
 
     assert report.skipped == 1
     assert len(client.puts) == 2
+    assert report.wrote == 2
     assert [tuple(entity.key.flat_path) for entity in client.puts] == [
         ("Doc", "b"),
         ("Doc", "c"),
@@ -123,3 +154,14 @@ def test_read_only_reports_blocked_writes_without_committing():
     assert report.read_only is True
     assert report.failed == 1
     assert report.results[0].error == "read_only prevents write execution"
+
+
+def test_commit_retry_policy_accepts_google_retry_style_attributes():
+    class RetryLike:
+        _initial = 2.0
+        _multiplier = 2.0
+        _deadline = 40.0
+
+    policy = io._coerce_commit_retry_policy(RetryLike())
+
+    assert policy == dsp.CommitRetryPolicy(initial=2.0, multiplier=2.0, deadline=40.0)
