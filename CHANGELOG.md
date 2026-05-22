@@ -7,8 +7,20 @@ future releases. Version entries describe repository history only.
 
 ## Unreleased
 
+No changes documented after 0.2.0.
+
+## 0.2.0
+
 ### Added
 
+- Added optional Polars support through `datastore-pandas[polars]` and the
+  `datastore_pandas.polars` adapter module.
+- Added Polars implementations for `read_datastore`, `iter_datastore`,
+  `to_datastore`, and `patch_datastore`.
+- Added `--backend pandas|polars` options to the main examples and emulator
+  examples.
+- Added Polars coverage for the public Divvy ancestor test.
+- Added unit tests for Polars row iteration and sparse missing-value omission.
 - Added `examples/emulator/large_linked_dataset.py`, a synthetic linked-kind
   emulator scenario that writes 200,000 `LinkedEvent` rows by default and can be
   configured past 1,000,000 `LinkedEvent` rows for host-memory stress testing.
@@ -22,6 +34,12 @@ future releases. Version entries describe repository history only.
 
 ### Changed
 
+- Updated package metadata from a pandas-only description to a DataFrame
+  interface with pandas and optional Polars support.
+- Updated emulator output helpers to render Polars tables with ASCII-safe output
+  on Windows consoles.
+- Aligned pandas `patch_datastore` key validation with the Polars adapter by
+  requiring complete keys.
 - Large linked-kind emulator load defaults use conservative batch and worker
   settings for local emulator stability.
 - Large linked-kind event rows keep only relationship and event-type fields
@@ -44,28 +62,6 @@ future releases. Version entries describe repository history only.
 - The README no longer references a specific analytics database product.
 - Emulator reset now includes the linked-kind example entity kinds and
   namespaces.
-
-## 0.2.0
-
-### Added
-
-- Added optional Polars support through `datastore-pandas[polars]` and the
-  `datastore_pandas.polars` adapter module.
-- Added Polars implementations for `read_datastore`, `iter_datastore`,
-  `to_datastore`, and `patch_datastore`.
-- Added `--backend pandas|polars` options to the main examples and emulator
-  examples.
-- Added Polars coverage for the public Divvy ancestor test.
-- Added unit tests for Polars row iteration and sparse missing-value omission.
-
-### Changed
-
-- Updated package metadata from a pandas-only description to a DataFrame
-  interface with pandas and optional Polars support.
-- Updated emulator output helpers to render Polars tables with ASCII-safe output
-  on Windows consoles.
-- Aligned pandas `patch_datastore` key validation with the Polars adapter by
-  requiring complete keys.
 
 ## 0.1.0
 
