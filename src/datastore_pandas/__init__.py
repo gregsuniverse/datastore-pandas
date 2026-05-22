@@ -1,5 +1,6 @@
 """Pandas helpers for Firestore in Datastore mode."""
 
+from datastore_pandas.accessor import DatastoreFrame, kind
 from datastore_pandas.errors import DatastorePandasError, KeyValidationError, SchemaError
 from datastore_pandas.io import (
     iter_datastore,
@@ -36,6 +37,7 @@ __all__ = [
     "BlobType",
     "BoolType",
     "DatastoreKey",
+    "DatastoreFrame",
     "DatastorePandasError",
     "DatastoreType",
     "EmbeddedEntityType",
@@ -64,6 +66,7 @@ __all__ = [
     "WriteReport",
     "WriteResult",
     "iter_datastore",
+    "kind",
     "patch_datastore",
     "plan_datastore_write",
     "plan_indexes",
