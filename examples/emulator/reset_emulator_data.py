@@ -21,6 +21,9 @@ def reset(*, batch_size: int, namespaces: list[str]) -> None:
             "LinkedSession",
             "LinkedEvent",
             "PolicyEvent",
+            "ModelEvent",
+            "ModelSummary",
+            "InferredEvent",
         ]:
             query = ds.query(kind=kind, namespace=None if namespace == "<default>" else namespace)
             query.keys_only()
@@ -53,9 +56,11 @@ def main() -> None:
             "tenant-a",
             "tenant-b",
             "tenant-a-policy",
+            "tenant-a-model",
             "divvy-public",
             "linked-large",
             "policy-tenant",
+            "model-tenant",
         ],
     )
 

@@ -442,6 +442,60 @@ delete_report = workouts.cleanup_duplicates(
 This cleanup is for logical duplicates by property values. Datastore cannot store
 two entities with the same exact key.
 
+## DataFrame Models
+
+`dsp.dspdf(...)` is a second layer over `dsp.kind(...)`. It owns a current
+DataFrame and retains source context:
+
+```python
+events = dsp.dspdf(
+    kind="Workout",
+    schema=schema,
+    client=client,
+    backend="pandas",
+    namespace="tenant-a",
+    keep_original=True,
+)
+
+events = events.load()
+events.df["duration_sec"] = events.df["duration_sec"] + 60
+report = events.write(skip_unchanged=True)
+```
+
+Derived or aggregated frames cannot write back to the source kind by accident:
+
+```python
+summary = events.aggregate(
+    by=["user_id"],
+    metrics={"duration_sec": "sum"},
+    target_schema=summary_schema,
+)
+
+summary.write_to(schema=summary_schema)
+```
+
+If a transformed DataFrame drops source keys, changes row shape, or is explicitly
+marked as derived, use `with_target(...)` or `write_to(...)` with a target schema.
+
+## Schema Inference
+
+Datastore entities are typed, but a kind can still contain sparse and mixed-shape
+entities. The package can infer a conservative schema from sampled entities or a
+DataFrame:
+
+```python
+report = dsp.infer_schema(kind="Event", client=client, sample_size=1000)
+schema = report.schema
+print(report.mixed_fields)
+
+events = dsp.dspdf(kind="Event", client=client, infer_schema=True).load()
+```
+
+If one property has different value types across entities, the default
+`mixed_type_policy="object"` uses a pass-through field type and records the
+observed variants in the inference report. Use `mixed_type_policy="error"` to
+fail on mixed types, or `"string"` to coerce mixed values on writes.
+
 ## Patching Partial DataFrames
 
 Projection queries and sparse application workflows often produce partial
@@ -528,6 +582,9 @@ The emulator examples include:
 - `policy_examples.py`: validates the instantiated accessor, dry-run/read-only
   write policies, skip-unchanged writes, audit fields, bound ancestor validation,
   and logical duplicate cleanup against the emulator
+- `dataframe_model_examples.py`: validates `dspdf(...)` source context,
+  row-preserving write-back, derived aggregate target writes, and schema
+  inference for mixed property types
 - `inspect_sparse_entities.py`: inspects raw entities to confirm sparse properties
   are omitted
 - `index_planning.py`: prints index suggestions
@@ -590,8 +647,10 @@ src/datastore_pandas/
   batches.py       batch planning and duplicate-key checks
   convert.py       row/entity conversion
   errors.py        package exceptions
+  inference.py     schema inference and mixed-type reports
   io.py            read_datastore, iter_datastore, to_datastore, patch_datastore
   keys.py          DatastoreKey, KeySpec, KeyPart
+  model.py         dspdf DataFrame-owning model layer
   planning.py      dry-run, read-only, and skip-unchanged write planning
   polars.py        optional Polars adapter
   query.py         QuerySpec and index planning

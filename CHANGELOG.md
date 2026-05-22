@@ -26,6 +26,15 @@ future releases. Version entries describe repository history only.
 - Added an emulator-backed policy example covering instantiated accessors,
   dry-run/read-only writes, skip-unchanged writes, audit fields, bound ancestor
   validation, and duplicate cleanup with pandas and Polars.
+- Added `dspdf(...)`, a DataFrame-owning model layer that retains source context,
+  optional original snapshots, derived-frame lineage, and alternate write targets.
+- Added derived aggregate helpers and `write_to(...)` / `plan_write_to(...)` for
+  writing transformed DataFrames to explicit target kinds.
+- Added schema inference from Datastore entities, DataFrames, or records,
+  including mixed-type field reporting and configurable mixed-type policies.
+- Added an emulator-backed model example covering source write-back,
+  derived-write blocking, aggregate summary writes, and mixed-type schema
+  inference with pandas and Polars.
 
 ### Changed
 

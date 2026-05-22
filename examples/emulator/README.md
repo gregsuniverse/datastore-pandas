@@ -46,6 +46,7 @@ python examples\emulator\query_examples.py --backend polars --user-id user-00042
 python examples\emulator\patch_sparse_rows.py --backend polars --user-id user-00042
 python examples\emulator\transaction_example.py --backend polars
 python examples\emulator\policy_examples.py --backend polars
+python examples\emulator\dataframe_model_examples.py --backend polars
 python examples\emulator\inspect_sparse_entities.py --limit 2000 --namespace tenant-a
 python examples\emulator\index_planning.py
 python examples\emulator\public_divvy_ancestor_test.py --backend polars --rows 50000 --workers 8
@@ -87,6 +88,25 @@ Run it with either DataFrame backend:
 ```powershell
 python examples\emulator\policy_examples.py
 python examples\emulator\policy_examples.py --backend polars
+```
+
+## DataFrame Model And Schema Inference Test
+
+`dataframe_model_examples.py` uses `dspdf(...)`, the DataFrame-owning model layer.
+It validates:
+
+- loading source entities into a model that retains source context
+- optional original DataFrame snapshots
+- row-preserving source writes with `skip_unchanged=True`
+- blocking derived aggregate writes back to the source kind
+- writing derived aggregate results to an alternate summary kind
+- schema inference for a kind with mixed property types
+
+Run it with either DataFrame backend:
+
+```powershell
+python examples\emulator\dataframe_model_examples.py
+python examples\emulator\dataframe_model_examples.py --backend polars
 ```
 
 ## Public Dataset Ancestor Test
