@@ -9,6 +9,10 @@ class SchemaError(DatastorePandasError):
     """Raised when a schema cannot safely represent the requested data."""
 
 
+class DerivedFrameWriteError(DatastorePandasError):
+    """Raised when a derived DataFrame cannot safely write to its source kind."""
+
+
 class KeyValidationError(DatastorePandasError):
     """Raised when a Datastore key is malformed or ambiguous."""
 

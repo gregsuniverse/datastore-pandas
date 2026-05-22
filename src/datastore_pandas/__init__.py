@@ -2,7 +2,12 @@
 
 from datastore_pandas.accessor import DatastoreFrame, kind
 from datastore_pandas.audit import AuditPolicy
-from datastore_pandas.errors import DatastorePandasError, KeyValidationError, SchemaError
+from datastore_pandas.errors import (
+    DatastorePandasError,
+    DerivedFrameWriteError,
+    KeyValidationError,
+    SchemaError,
+)
 from datastore_pandas.io import (
     CommitRetryPolicy,
     iter_datastore,
@@ -12,6 +17,7 @@ from datastore_pandas.io import (
     to_datastore,
 )
 from datastore_pandas.keys import DatastoreKey, KeyPart, KeySpec, key_policy
+from datastore_pandas.model import DatastoreDataFrame, dspdf
 from datastore_pandas.planning import WritePlan
 from datastore_pandas.query import IndexSuggestion, QueryPlan, QuerySpec, plan_indexes
 from datastore_pandas.reports import PlannedMutation, WriteAction, WriteReport, WriteResult
@@ -42,8 +48,10 @@ __all__ = [
     "CommitRetryPolicy",
     "DatastoreKey",
     "DatastoreFrame",
+    "DatastoreDataFrame",
     "DatastorePandasError",
     "DatastoreType",
+    "DerivedFrameWriteError",
     "EmbeddedEntityType",
     "Field",
     "Float64Type",
@@ -71,6 +79,7 @@ __all__ = [
     "WriteResult",
     "iter_datastore",
     "kind",
+    "dspdf",
     "key_policy",
     "patch_datastore",
     "plan_datastore_write",
