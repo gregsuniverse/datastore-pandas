@@ -1,0 +1,11 @@
+services:
+  datastore-emulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: datastore-pandas-emulator:latest
+    environment:
+      DATASTORE_PROJECT_ID: datastore-pandas-emulator
+    ports:
+      - "8081:8081"
+
