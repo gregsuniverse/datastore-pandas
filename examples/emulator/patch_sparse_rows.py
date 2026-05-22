@@ -5,14 +5,23 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 
-import pandas as pd
+from common import (
+    BACKENDS,
+    Backend,
+    WORKOUT_SCHEMA,
+    adapter,
+    ancestor_key,
+    client,
+    frame_from_records,
+    frame_is_empty,
+    iter_records,
+    print_frame,
+)
 
-from common import WORKOUT_SCHEMA, ancestor_key, client, print_frame
-import datastore_pandas as dsp
 
-
-def run(user_id: str, *, tenant: str) -> None:
+def run(user_id: str, *, tenant: str, backend: Backend = "pandas") -> None:
     ds = client()
+    dsp = adapter(backend)
     before = dsp.read_datastore(
         kind="Workout",
         schema=WORKOUT_SCHEMA,
@@ -23,19 +32,20 @@ def run(user_id: str, *, tenant: str) -> None:
         include_key=True,
     )
     print_frame("Before patch", before)
-    if before.empty:
+    if frame_is_empty(before):
         print("No rows found to patch. Load mock data first.")
         return
 
-    patch = pd.DataFrame(
+    patch = frame_from_records(
         [
             {
                 "__key__": row["__key__"],
                 "notes": f"Reviewed locally at {datetime.now(timezone.utc).isoformat()}",
                 "last_reviewed_at": datetime.now(timezone.utc),
             }
-            for _, row in before.iterrows()
-        ]
+            for row in iter_records(before)
+        ],
+        backend,
     )
     report = dsp.patch_datastore(
         patch,
@@ -62,10 +72,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-id", default="user-00042")
     parser.add_argument("--tenant", default="tenant-a")
+    parser.add_argument("--backend", choices=BACKENDS, default="pandas")
     args = parser.parse_args()
-    run(args.user_id, tenant=args.tenant)
+    run(args.user_id, tenant=args.tenant, backend=args.backend)
 
 
 if __name__ == "__main__":
     main()
-

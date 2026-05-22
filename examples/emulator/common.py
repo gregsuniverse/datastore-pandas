@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sys
+from typing import Any, Literal
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,10 +13,10 @@ SRC = ROOT / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-import pandas as pd
-
 import datastore_pandas as dsp
 
+Backend = Literal["pandas", "polars"]
+BACKENDS = ("pandas", "polars")
 
 PROJECT_ID = os.getenv("DATASTORE_PROJECT_ID", "datastore-pandas-emulator")
 EMULATOR_HOST = os.getenv("DATASTORE_EMULATOR_HOST", "localhost:8081")
@@ -76,12 +77,68 @@ COUNTER_SCHEMA = dsp.Schema(
 )
 
 
-def read_workout_csv(path: Path) -> pd.DataFrame:
+def adapter(backend: Backend):
+    if backend == "polars":
+        import datastore_pandas.polars as dsp_pl
+
+        return dsp_pl
+    return dsp
+
+
+def frame_from_records(records: list[dict[str, Any]], backend: Backend):
+    if backend == "polars":
+        import polars as pl
+
+        return pl.DataFrame(records, strict=False)
+    import pandas as pd
+
+    return pd.DataFrame.from_records(records)
+
+
+def read_workout_csv(path: Path, *, backend: Backend = "pandas"):
+    if backend == "polars":
+        import polars as pl
+
+        return pl.read_csv(path, try_parse_dates=True, null_values=[""])
+
+    import pandas as pd
+
     df = pd.read_csv(path, parse_dates=["started_at"])
     for column in ["bike_trainer"]:
         if column in df:
             df[column] = df[column].map(_parse_bool).astype("boolean")
     return df
+
+
+def write_csv(df: Any, path: Path) -> None:
+    if _is_polars_frame(df):
+        df.write_csv(path)
+        return
+    df.to_csv(path, index=False)
+
+
+def frame_len(df: Any) -> int:
+    return df.height if _is_polars_frame(df) else len(df)
+
+
+def frame_head(df: Any, rows: int):
+    return df.head(rows)
+
+
+def frame_is_empty(df: Any) -> bool:
+    return df.is_empty() if _is_polars_frame(df) else df.empty
+
+
+def iter_records(df: Any):
+    if _is_polars_frame(df):
+        yield from df.iter_rows(named=True)
+        return
+    for _, row in df.iterrows():
+        yield row.to_dict()
+
+
+def scalar(row: Any, name: str):
+    return row[name]
 
 
 def ancestor_key(user_id: str, *, tenant: str = "tenant-a") -> dsp.DatastoreKey:
@@ -92,17 +149,32 @@ def counter_key(tenant: str, counter_name: str) -> dsp.DatastoreKey:
     return dsp.DatastoreKey(path=(("Tenant", tenant), ("Counter", counter_name)))
 
 
-def print_frame(title: str, df: pd.DataFrame, *, rows: int = 8) -> None:
+def print_frame(title: str, df: Any, *, rows: int = 8) -> None:
     print(f"\n== {title} ==")
-    if df.empty:
+    if frame_is_empty(df):
         print("<empty>")
+        return
+    if _is_polars_frame(df):
+        import polars as pl
+
+        with pl.Config(
+            tbl_formatting="ASCII_FULL_CONDENSED",
+            tbl_hide_column_data_types=True,
+        ):
+            print(df.head(rows))
         return
     print(df.head(rows).to_string(index=False))
 
 
 def _parse_bool(value):
+    import pandas as pd
+
     if pd.isna(value) or value == "":
         return pd.NA
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes"}
+
+
+def _is_polars_frame(df: Any) -> bool:
+    return df.__class__.__module__.startswith("polars.")

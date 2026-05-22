@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import argparse
 
-from common import WORKOUT_SCHEMA, ancestor_key, client, print_frame
-import datastore_pandas as dsp
+from common import BACKENDS, Backend, WORKOUT_SCHEMA, adapter, ancestor_key, client, print_frame
 
 
-def run(user_id: str, *, tenant: str, limit: int) -> None:
+def run(user_id: str, *, tenant: str, limit: int, backend: Backend = "pandas") -> None:
     ds = client()
+    dsp = adapter(backend)
     ancestor = ancestor_key(user_id, tenant=tenant)
 
     full = dsp.read_datastore(
@@ -61,8 +61,9 @@ def main() -> None:
     parser.add_argument("--user-id", default="user-00042")
     parser.add_argument("--tenant", default="tenant-a")
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--backend", choices=BACKENDS, default="pandas")
     args = parser.parse_args()
-    run(args.user_id, tenant=args.tenant, limit=args.limit)
+    run(args.user_id, tenant=args.tenant, limit=args.limit, backend=args.backend)
 
 
 if __name__ == "__main__":

@@ -121,7 +121,7 @@ def to_datastore(
     rows = list(_iter_rows(df))
     keys = [schema.key_for_row(row) for _, row in rows]
     validate_unique_complete_keys(keys)
-    _require_complete_keys(keys, operation="patch_datastore")
+    _require_complete_keys(keys, operation="to_datastore")
     items = list(zip(rows, keys))
 
     if max_workers <= 1:
@@ -176,6 +176,7 @@ def patch_datastore(
     rows = list(_iter_rows(df))
     keys = [schema.key_for_row(row) for _, row in rows]
     validate_unique_complete_keys(keys)
+    _require_complete_keys(keys, operation="patch_datastore")
     items = list(zip(rows, keys))
 
     if max_workers <= 1:

@@ -1,8 +1,8 @@
 """Public dataset integration test using Divvy trip data and Datastore ancestors.
 
-This example downloads a public CSV-in-ZIP dataset into pandas, maps it into a
-Datastore hierarchy, loads it through datastore-pandas, and validates ancestor
-queries against the emulator.
+This example downloads a public CSV-in-ZIP dataset, maps it into a Datastore
+hierarchy, loads it through the selected datastore-pandas DataFrame adapter, and
+validates ancestor queries against the emulator.
 
 Hierarchy:
 
@@ -22,8 +22,19 @@ import zipfile
 
 import pandas as pd
 
-from common import client, print_frame
 import datastore_pandas as dsp
+
+from common import (
+    BACKENDS,
+    Backend,
+    adapter,
+    client,
+    frame_from_records,
+    frame_is_empty,
+    frame_len,
+    iter_records,
+    print_frame,
+)
 
 
 DATASET_ID = "divvy-2024-01"
@@ -93,13 +104,14 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--batch-size", type=int, default=400)
     parser.add_argument("--ancestor-limit", type=int, default=1000)
+    parser.add_argument("--backend", choices=BACKENDS, default="pandas")
     args = parser.parse_args()
 
     zip_path = download_dataset(args.url, args.zip_path)
-    rides = load_rides(zip_path, rows=args.rows)
-    stations = summarize_stations(rides)
+    rides = load_rides(zip_path, rows=args.rows, backend=args.backend)
+    stations = summarize_stations(rides, backend=args.backend)
 
-    busiest = stations.sort_values("ride_count", ascending=False).iloc[0]
+    busiest = _busiest_station(stations, args.backend)
     station_key = busiest["station_key"]
     station_ancestor = dsp.DatastoreKey(
         namespace=NAMESPACE,
@@ -107,8 +119,9 @@ def main() -> None:
     )
 
     ds = client()
+    dsp_io = adapter(args.backend)
     started = perf_counter()
-    station_report = dsp.to_datastore(
+    station_report = dsp_io.to_datastore(
         stations,
         schema=STATION_SCHEMA,
         client=ds,
@@ -118,7 +131,7 @@ def main() -> None:
     )
     station_report.raise_for_errors()
 
-    ride_report = dsp.to_datastore(
+    ride_report = dsp_io.to_datastore(
         rides,
         schema=RIDE_SCHEMA,
         client=ds,
@@ -130,12 +143,12 @@ def main() -> None:
     elapsed = perf_counter() - started
 
     print(
-        f"loaded public Divvy data stations={station_report.succeeded:,} "
+        f"loaded public Divvy data backend={args.backend} stations={station_report.succeeded:,} "
         f"rides={ride_report.succeeded:,} elapsed={elapsed:.2f}s"
     )
     print(f"busiest station: {busiest['start_station_name']} ({station_key})")
 
-    station_children = dsp.read_datastore(
+    station_children = dsp_io.read_datastore(
         kind="Ride",
         schema=RIDE_SCHEMA,
         client=ds,
@@ -145,7 +158,7 @@ def main() -> None:
     )
     print_frame("Ride descendants under one Station ancestor", station_children)
 
-    projected_children = dsp.read_datastore(
+    projected_children = dsp_io.read_datastore(
         kind="Ride",
         schema=RIDE_SCHEMA,
         client=ds,
@@ -156,7 +169,7 @@ def main() -> None:
     )
     print_frame("Projected Ride descendants under Station ancestor", projected_children)
 
-    keys_only = dsp.read_datastore(
+    keys_only = dsp_io.read_datastore(
         kind="Ride",
         client=ds,
         ancestor=station_ancestor,
@@ -166,7 +179,7 @@ def main() -> None:
     )
     print_frame("Keys-only Ride descendants under Station ancestor", keys_only)
 
-    stations_under_dataset = dsp.read_datastore(
+    stations_under_dataset = dsp_io.read_datastore(
         kind="Station",
         schema=STATION_SCHEMA,
         client=ds,
@@ -178,18 +191,19 @@ def main() -> None:
     print_frame("Station descendants under Dataset ancestor", stations_under_dataset)
 
     expected_station_count = int(busiest["ride_count"])
-    assert not station_children.empty, "station ancestor query returned no rides"
-    assert len(station_children) == min(expected_station_count, args.ancestor_limit)
-    assert not projected_children.empty, "projection ancestor query returned no rides"
-    assert len(keys_only) == min(10, expected_station_count)
-    assert not stations_under_dataset.empty, "dataset ancestor query returned no stations"
-    for key in station_children["__key__"]:
+    assert not frame_is_empty(station_children), "station ancestor query returned no rides"
+    assert frame_len(station_children) == min(expected_station_count, args.ancestor_limit)
+    assert not frame_is_empty(projected_children), "projection ancestor query returned no rides"
+    assert frame_len(keys_only) == min(10, expected_station_count)
+    assert not frame_is_empty(stations_under_dataset), "dataset ancestor query returned no stations"
+    for row in iter_records(station_children):
+        key = row["__key__"]
         assert key.path[:2] == (("Dataset", DATASET_ID), ("Station", station_key))
 
     print(
         "ancestor checks passed: "
         f"station_expected={expected_station_count:,} "
-        f"station_returned={len(station_children):,}"
+        f"station_returned={frame_len(station_children):,}"
     )
 
 
@@ -204,7 +218,7 @@ def download_dataset(url: str, zip_path: Path) -> Path:
     return zip_path
 
 
-def load_rides(zip_path: Path, *, rows: int) -> pd.DataFrame:
+def load_rides(zip_path: Path, *, rows: int, backend: Backend = "pandas"):
     with zipfile.ZipFile(zip_path) as archive:
         csv_name = next(name for name in archive.namelist() if name.endswith(".csv"))
         with archive.open(csv_name) as source:
@@ -247,12 +261,15 @@ def load_rides(zip_path: Path, *, rows: int) -> pd.DataFrame:
     ]
     rides = raw[columns].copy()
     print(f"loaded public dataset rows={len(rides):,} stations={rides['station_key'].nunique():,}")
-    return rides
+    if backend == "pandas":
+        return rides
+    return frame_from_records(rides.to_dict("records"), backend)
 
 
-def summarize_stations(rides: pd.DataFrame) -> pd.DataFrame:
+def summarize_stations(rides, *, backend: Backend = "pandas"):
+    rides_pd = _to_pandas(rides)
     grouped = (
-        rides.groupby("station_key", dropna=False)
+        rides_pd.groupby("station_key", dropna=False)
         .agg(
             start_station_name=("start_station_name", "first"),
             ride_count=("ride_id", "count"),
@@ -262,14 +279,30 @@ def summarize_stations(rides: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
     grouped["ride_count"] = grouped["ride_count"].astype("int64")
-    return grouped
+    if backend == "pandas":
+        return grouped
+    return frame_from_records(grouped.to_dict("records"), backend)
+
+
+def _busiest_station(stations, backend: Backend) -> dict:
+    if backend == "polars":
+        row = stations.sort("ride_count", descending=True).head(1).to_dicts()[0]
+        return dict(row)
+    return stations.sort_values("ride_count", ascending=False).iloc[0].to_dict()
+
+
+def _to_pandas(df) -> pd.DataFrame:
+    if df.__class__.__module__.startswith("polars."):
+        return pd.DataFrame(df.to_dicts())
+    return df
 
 
 def _station_key(row) -> str:
     station_id = row.get("start_station_id")
     if pd.notna(station_id) and str(station_id).strip():
         return str(station_id).strip()
-    return "station-" + re.sub(r"[^a-z0-9]+", "-", str(row["start_station_name"]).lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", str(row["start_station_name"]).lower()).strip("-")
+    return "station-" + slug
 
 
 if __name__ == "__main__":

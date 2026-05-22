@@ -6,17 +6,33 @@ import argparse
 from pathlib import Path
 from time import perf_counter
 
-from common import DEFAULT_DATA_FILE, WORKOUT_SCHEMA, client, read_workout_csv
-import datastore_pandas as dsp
+from common import (
+    BACKENDS,
+    Backend,
+    DEFAULT_DATA_FILE,
+    WORKOUT_SCHEMA,
+    adapter,
+    client,
+    frame_head,
+    frame_len,
+    read_workout_csv,
+)
 
 
-def load(path: Path, *, workers: int, batch_size: int, limit: int | None = None) -> dsp.WriteReport:
-    df = read_workout_csv(path)
+def load(
+    path: Path,
+    *,
+    workers: int,
+    batch_size: int,
+    limit: int | None = None,
+    backend: Backend = "pandas",
+):
+    df = read_workout_csv(path, backend=backend)
     if limit is not None:
-        df = df.head(limit)
+        df = frame_head(df, limit)
 
     started = perf_counter()
-    report = dsp.to_datastore(
+    report = adapter(backend).to_datastore(
         df,
         schema=WORKOUT_SCHEMA,
         client=client(),
@@ -26,8 +42,8 @@ def load(path: Path, *, workers: int, batch_size: int, limit: int | None = None)
     )
     elapsed = perf_counter() - started
     print(
-        f"loaded rows={len(df):,} succeeded={report.succeeded:,} "
-        f"failed={report.failed:,} elapsed={elapsed:.2f}s"
+        f"loaded backend={backend} rows={frame_len(df):,} "
+        f"succeeded={report.succeeded:,} failed={report.failed:,} elapsed={elapsed:.2f}s"
     )
     return report
 
@@ -38,9 +54,16 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--batch-size", type=int, default=400)
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--backend", choices=BACKENDS, default="pandas")
     args = parser.parse_args()
 
-    report = load(args.input, workers=args.workers, batch_size=args.batch_size, limit=args.limit)
+    report = load(
+        args.input,
+        workers=args.workers,
+        batch_size=args.batch_size,
+        limit=args.limit,
+        backend=args.backend,
+    )
     report.raise_for_errors()
 
 

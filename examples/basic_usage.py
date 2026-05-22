@@ -10,7 +10,8 @@ Credentials:
 
 from __future__ import annotations
 
-import pandas as pd
+import argparse
+from datetime import datetime, timezone
 
 import datastore_pandas as dsp
 
@@ -35,24 +36,30 @@ schema = dsp.Schema(
 
 
 def main() -> None:
-    workouts = pd.DataFrame(
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--backend", choices=["pandas", "polars"], default="pandas")
+    args = parser.parse_args()
+    adapter = _adapter(args.backend)
+
+    workouts = _frame_from_records(
         [
             {
                 "tenant": "tenant-a",
                 "user_id": "sample-user",
                 "workout_id": "w-001",
-                "started_at": pd.Timestamp("2026-05-01T12:00:00Z"),
+                "started_at": datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc),
                 "duration_sec": 3600,
                 "distance_m": 1200.0,
                 "notes": "Technique session; do not index long free text.",
             }
-        ]
+        ],
+        args.backend,
     )
 
-    report = dsp.to_datastore(workouts, schema=schema, mode="upsert")
+    report = adapter.to_datastore(workouts, schema=schema, mode="upsert")
     print(f"wrote={report.succeeded} failed={report.failed}")
 
-    projection = dsp.read_datastore(
+    projection = adapter.read_datastore(
         kind="Workout",
         schema=schema,
         filters=[("user_id", "=", "sample-user")],
@@ -61,6 +68,24 @@ def main() -> None:
         include_key=True,
     )
     print(projection)
+
+
+def _adapter(backend: str):
+    if backend == "polars":
+        import datastore_pandas.polars as dsp_pl
+
+        return dsp_pl
+    return dsp
+
+
+def _frame_from_records(records: list[dict], backend: str):
+    if backend == "polars":
+        import polars as pl
+
+        return pl.DataFrame(records, strict=False)
+    import pandas as pd
+
+    return pd.DataFrame.from_records(records)
 
 
 if __name__ == "__main__":

@@ -7,9 +7,7 @@ from datetime import datetime, timedelta, timezone
 import random
 from pathlib import Path
 
-import pandas as pd
-
-from common import DEFAULT_DATA_FILE
+from common import BACKENDS, Backend, DEFAULT_DATA_FILE, frame_from_records, frame_len, write_csv
 
 
 ACTIVITY_TYPES = ("swim", "bike", "run")
@@ -17,7 +15,7 @@ STROKES = ("free", "back", "breast", "fly", "mixed")
 SHOES = ("Tempo 4", "Daily Max", "Carbon Racer", "Trail Grip")
 
 
-def generate_workouts(rows: int, *, users: int, seed: int) -> pd.DataFrame:
+def generate_workouts(rows: int, *, users: int, seed: int, backend: Backend = "pandas"):
     rng = random.Random(seed)
     start = datetime(2025, 1, 1, tzinfo=timezone.utc)
     records = []
@@ -37,14 +35,14 @@ def generate_workouts(rows: int, *, users: int, seed: int) -> pd.DataFrame:
             "duration_sec": duration_sec,
             "distance_m": round(distance_m, 2),
             "activity_type": activity_type,
-            "pool_length_m": pd.NA,
-            "stroke": pd.NA,
-            "bike_power_w": pd.NA,
-            "bike_trainer": pd.NA,
-            "run_cadence_spm": pd.NA,
-            "shoe_model": pd.NA,
-            "notes": pd.NA,
-            "last_reviewed_at": pd.NA,
+            "pool_length_m": None,
+            "stroke": None,
+            "bike_power_w": None,
+            "bike_trainer": None,
+            "run_cadence_spm": None,
+            "shoe_model": None,
+            "notes": None,
+            "last_reviewed_at": None,
         }
 
         if activity_type == "swim":
@@ -64,7 +62,7 @@ def generate_workouts(rows: int, *, users: int, seed: int) -> pd.DataFrame:
 
         records.append(record)
 
-    return pd.DataFrame.from_records(records)
+    return frame_from_records(records, backend)
 
 
 def main() -> None:
@@ -73,13 +71,14 @@ def main() -> None:
     parser.add_argument("--users", type=int, default=1_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out", type=Path, default=DEFAULT_DATA_FILE)
+    parser.add_argument("--backend", choices=BACKENDS, default="pandas")
     args = parser.parse_args()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    df = generate_workouts(args.rows, users=args.users, seed=args.seed)
-    df.to_csv(args.out, index=False)
-    print(f"wrote {len(df):,} sparse workout rows to {args.out}")
-    print(df.head(5).to_string(index=False))
+    df = generate_workouts(args.rows, users=args.users, seed=args.seed, backend=args.backend)
+    write_csv(df, args.out)
+    print(f"wrote {frame_len(df):,} sparse workout rows to {args.out} using {args.backend}")
+    print(df.head(5))
 
 
 def _duration(activity_type: str, rng: random.Random) -> int:
@@ -100,4 +99,3 @@ def _distance(activity_type: str, duration_sec: int, rng: random.Random) -> floa
 
 if __name__ == "__main__":
     main()
-

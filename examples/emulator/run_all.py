@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from common import DEFAULT_DATA_FILE
+from common import BACKENDS, DEFAULT_DATA_FILE, frame_len, write_csv
 from generate_mock_data import generate_workouts
 from inspect_sparse_entities import run as inspect_sparse
 from load_mock_data import load
@@ -24,19 +24,25 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=400)
     parser.add_argument("--user-id", default="user-00042")
     parser.add_argument("--tenant", default="tenant-a")
+    parser.add_argument("--backend", choices=BACKENDS, default="pandas")
     args = parser.parse_args()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    df = generate_workouts(args.rows, users=args.users, seed=args.seed)
-    df.to_csv(args.out, index=False)
-    print(f"generated {len(df):,} rows at {args.out}")
+    df = generate_workouts(args.rows, users=args.users, seed=args.seed, backend=args.backend)
+    write_csv(df, args.out)
+    print(f"generated {frame_len(df):,} rows at {args.out} using {args.backend}")
 
-    report = load(args.out, workers=args.workers, batch_size=args.batch_size)
+    report = load(args.out, workers=args.workers, batch_size=args.batch_size, backend=args.backend)
     report.raise_for_errors()
 
-    run_queries(args.user_id, tenant=args.tenant, limit=8)
-    run_patch(args.user_id, tenant=args.tenant)
-    run_transaction(tenant=args.tenant, counter_name="run-all-counter", increments=5)
+    run_queries(args.user_id, tenant=args.tenant, limit=8, backend=args.backend)
+    run_patch(args.user_id, tenant=args.tenant, backend=args.backend)
+    run_transaction(
+        tenant=args.tenant,
+        counter_name="run-all-counter",
+        increments=5,
+        backend=args.backend,
+    )
     inspect_sparse(limit=min(args.rows, 2_000), namespace=args.tenant)
 
 

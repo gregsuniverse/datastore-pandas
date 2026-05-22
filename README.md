@@ -1,8 +1,10 @@
 # datastore-pandas
 
-`datastore-pandas` is a schema-aware pandas interface for Firestore in Datastore
-mode. It is designed for Datastore's real execution model: indexed entity queries,
-key lookups, projections, cursor scans, transactions, and batched entity writes.
+`datastore-pandas` is a schema-aware DataFrame interface for Firestore in
+Datastore mode. It provides a pandas API by default and an optional Polars adapter
+through `datastore-pandas[polars]`. It is designed for Datastore's real execution
+model: indexed entity queries, key lookups, projections, cursor scans,
+transactions, and batched entity writes.
 
 It does not try to turn Datastore into BigQuery. BigQuery can expose a broad
 pandas-like API because it has SQL, columnar execution, joins, aggregations, and
@@ -27,6 +29,8 @@ shape of the package:
 - a transaction helper for small read-modify-write workflows
 - index-planning helpers that produce `index.yaml`-style suggestions
 - emulator examples for local integration testing
+- an optional Polars adapter with matching read, chunked-read, write, and patch
+  operations
 
 The package is not yet a complete production client. The current high-level write
 path relies on `google-cloud-datastore`; lower-level mutation support is still the
@@ -51,6 +55,19 @@ From this repository:
 ```powershell
 cd <repo>
 python -m pip install -e ".[test]"
+```
+
+For the optional Polars adapter:
+
+```powershell
+python -m pip install -e ".[test,polars]"
+```
+
+When installed from a package index, use:
+
+```powershell
+python -m pip install datastore-pandas
+python -m pip install "datastore-pandas[polars]"
 ```
 
 For local development against the emulator, no Google Cloud credentials are needed
@@ -101,12 +118,24 @@ report = dsp.to_datastore(
 report.raise_for_errors()
 ```
 
+For Polars, install the optional extra and use the adapter module. The schema,
+query, key, batching, projection, and sparse-write behavior is shared:
+
+```python
+import datastore_pandas as dsp
+import datastore_pandas.polars as dsp_pl
+
+df = dsp_pl.read_datastore(kind="Workout", schema=schema, limit=1000)
+report = dsp_pl.to_datastore(df, schema=schema, batch_size=400)
+```
+
 ## Why Schema Is Required For Writes
 
 Datastore mode does not enforce one fixed schema per kind. Two entities of the
-same kind can have different property sets and different property types. pandas,
-however, rectangularizes data into columns. Without an explicit schema, a write
-adapter cannot safely tell whether a missing DataFrame cell means:
+same kind can have different property sets and different property types. pandas
+and Polars, however, rectangularize data into columns. Without an explicit
+schema, a write adapter cannot safely tell whether a missing DataFrame cell
+means:
 
 - the property should be omitted
 - the property should be written as Datastore `null`
@@ -159,10 +188,10 @@ store swim, bike, and run entities together:
 | `bike_power_w` | no | yes | no |
 | `run_cadence_spm` | no | no | yes |
 
-When these entities are read into pandas, the DataFrame must contain all columns,
-so absent Datastore properties appear as `NA`. On write, those `NA` values should
-not become stored null properties on every entity. The default `missing_policy` is
-therefore `omit`.
+When these entities are read into pandas or Polars, the DataFrame must contain all
+columns, so absent Datastore properties appear as missing values. On write, those
+missing values should not become stored null properties on every entity. The
+default `missing_policy` is therefore `omit`.
 
 This matters for correctness, index size, write cost, and query behavior.
 
@@ -223,6 +252,9 @@ df = dsp.read_datastore(
 )
 ```
 
+Use `datastore_pandas.polars.read_datastore` with the same arguments when you
+want a Polars `DataFrame`.
+
 Use projections to read only indexed properties:
 
 ```python
@@ -271,7 +303,7 @@ The write path:
 
 - validates rows against the schema
 - builds Datastore keys from `KeySpec` or `__key__`
-- converts pandas values to Datastore-safe values
+- converts DataFrame values to Datastore-safe values
 - omits nullable missing values by default
 - excludes unindexed fields from indexes
 - rejects duplicate complete keys in one commit
@@ -350,8 +382,9 @@ In a second terminal:
 ```powershell
 $env:DATASTORE_EMULATOR_HOST = "localhost:8081"
 $env:DATASTORE_PROJECT_ID = "datastore-pandas-emulator"
-python -m pip install -e ".[test]"
+python -m pip install -e ".[test,polars]"
 python examples\emulator\run_all.py --rows 20000 --workers 8
+python examples\emulator\run_all.py --backend polars --rows 20000 --workers 8
 ```
 
 The emulator examples include:
@@ -370,6 +403,8 @@ The emulator examples include:
 - `public_divvy_ancestor_test.py`: downloads public Divvy bike-share trip data,
   loads `Dataset -> Station -> Ride` ancestor paths, and validates ancestor,
   projection, and keys-only queries
+
+The main examples accept `--backend pandas` or `--backend polars`.
 
 Full instructions are in [examples/emulator/README.md](examples/emulator/README.md).
 
@@ -417,6 +452,7 @@ src/datastore_pandas/
   errors.py        package exceptions
   io.py            read_datastore, iter_datastore, to_datastore, patch_datastore
   keys.py          DatastoreKey, KeySpec, KeyPart
+  polars.py        optional Polars adapter
   query.py         QuerySpec and index planning
   reports.py       write result reporting
   schema.py        Schema and Field
@@ -448,6 +484,8 @@ Current limitations:
   the package API yet.
 - the index planner is conservative and should be validated against emulator and
   production Query Explain output.
+- the Polars adapter shares the same Datastore backend; transaction helpers still
+  work with dictionaries rather than DataFrame-native transaction objects.
 
 Useful next work:
 
