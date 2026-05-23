@@ -7,8 +7,17 @@ future releases. Version entries describe repository history only.
 
 ## Unreleased
 
+No unreleased changes.
+
+## 0.2.1
+
 ### Added
 
+- Added PyPI project URLs, package keywords, Trove classifiers, and a release
+  tooling extra for local packaging checks.
+- Added `scripts/check_release.py` for version, changelog, lint, test, build,
+  and `twine check` validation before publishing.
+- Added publish workflow validation before trusted publishing to PyPI.
 - Added write planning primitives with dry-run reports, read-only write blocking,
   skip-unchanged full writes, and skip-unchanged patch writes.
 - Added `dsp.kind(...)` / `DatastoreFrame`, an instantiated kind accessor that

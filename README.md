@@ -72,6 +72,13 @@ For the optional Polars adapter:
 python -m pip install -e ".[test,polars]"
 ```
 
+For release metadata and distribution checks:
+
+```powershell
+python -m pip install -e ".[test,polars,release]"
+python scripts\check_release.py
+```
+
 When installed from a package index, use:
 
 ```powershell
@@ -92,6 +99,8 @@ Minimum supported third-party versions:
 | `polars` | `1.0.0` | Optional; required only for `datastore_pandas.polars`. |
 | `pytest` | `8.0.0` | Test/dev extra only. |
 | `ruff` | `0.8.0` | Test/dev extra only. |
+| `build` | `1.2.0` | Release extra only. |
+| `twine` | `6.0.0` | Release extra only. |
 
 The current local verification pass used Python 3.11 with
 `google-cloud-datastore 2.24.0`, `pandas 3.0.3`, `polars 1.40.1`, `pytest 9.0.3`,
@@ -608,6 +617,23 @@ The main examples accept `--backend pandas` or `--backend polars`.
 Full instructions are in the
 [emulator examples README](https://github.com/gregsuniverse/datastore-pandas/blob/main/examples/emulator/README.md).
 
+## Release Checks
+
+The project includes a local release validation helper:
+
+```powershell
+python -m pip install -e ".[test,polars,release]"
+python scripts\check_release.py
+```
+
+The helper checks that `pyproject.toml`, `src/datastore_pandas/__init__.py`, and
+`CHANGELOG.md` agree on the release version, then runs `ruff`, `compileall`,
+`pytest`, `python -m build`, and `twine check --strict`.
+
+The GitHub publish workflow runs the same metadata/test checks before building
+and publishing distributions through PyPI Trusted Publishing. Publishing is
+triggered by a GitHub Release.
+
 ## Type Mapping
 
 | Datastore concept | Package type |
@@ -663,6 +689,9 @@ src/datastore_pandas/
   schema.py        Schema and Field
   transaction.py   transaction context manager
   types.py         Datastore type converters
+
+scripts/
+  check_release.py release metadata, test, build, and twine-check helper
 
 examples/
   basic_usage.py

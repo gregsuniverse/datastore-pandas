@@ -4,15 +4,34 @@ build-backend = "hatchling.build"
 
 [project]
 name = "datastore-pandas"
-version = "0.2.0"
+version = "0.2.1"
 description = "A Datastore mode DataFrame interface with pandas and optional Polars support."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Unlicense" }
+keywords = ["datastore", "firestore", "pandas", "polars", "dataframe", "google-cloud"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Database",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
   "google-cloud-datastore>=2.20.0",
   "pandas>=2.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/gregsuniverse/datastore-pandas"
+Repository = "https://github.com/gregsuniverse/datastore-pandas"
+Issues = "https://github.com/gregsuniverse/datastore-pandas/issues"
+Changelog = "https://github.com/gregsuniverse/datastore-pandas/blob/main/CHANGELOG.md"
+Disclaimer = "https://github.com/gregsuniverse/datastore-pandas/blob/main/DISCLAIMER.md"
 
 [project.optional-dependencies]
 test = [
@@ -22,6 +41,11 @@ test = [
 ]
 polars = [
   "polars>=1.0.0",
+]
+release = [
+  "build>=1.2.0",
+  "tomli>=2.0.0; python_version < '3.11'",
+  "twine>=6.0.0",
 ]
 
 [tool.pytest.ini_options]
