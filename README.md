@@ -585,6 +585,11 @@ The emulator examples include:
 - `dataframe_model_examples.py`: validates `dspdf(...)` source context,
   row-preserving write-back, derived aggregate target writes, and schema
   inference for mixed property types
+- `edge_case_examples.py`: focused executable checks for no-client dry-run and
+  read-only planning, clear write reports, deterministic keys, bound ancestors,
+  audit timestamp aliases, retry/batch behavior, injectable fake clients,
+  skip-unchanged writes, duplicate cleanup, derived model targets, and mixed-type
+  schema inference
 - `inspect_sparse_entities.py`: inspects raw entities to confirm sparse properties
   are omitted
 - `index_planning.py`: prints index suggestions
@@ -666,6 +671,7 @@ examples/
     docker-compose.yml
     Dockerfile
     README.md
+    edge_case_examples.py
     run_all.py
 ```
 

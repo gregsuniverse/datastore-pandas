@@ -35,6 +35,11 @@ future releases. Version entries describe repository history only.
 - Added an emulator-backed model example covering source write-back,
   derived-write blocking, aggregate summary writes, and mixed-type schema
   inference with pandas and Polars.
+- Added a focused emulator-backed edge-case example covering no-client dry-run
+  and read-only planning, clear write reports, deterministic keys, bound
+  ancestors, audit timestamp aliases, retry/batch behavior, injectable fake
+  clients, skip-unchanged writes, duplicate cleanup, derived model targets, and
+  mixed-type schema inference.
 
 ### Changed
 

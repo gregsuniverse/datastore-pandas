@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from common import BACKENDS, DEFAULT_DATA_FILE, frame_len, write_csv
+from edge_case_examples import run as run_edge_case_examples
 from generate_mock_data import generate_workouts
 from inspect_sparse_entities import run as inspect_sparse
 from load_mock_data import load
@@ -47,6 +48,7 @@ def main() -> None:
     )
     run_policy_examples(tenant=f"{args.tenant}-policy", backend=args.backend)
     run_model_examples(tenant=f"{args.tenant}-model", backend=args.backend)
+    run_edge_case_examples(tenant=f"{args.tenant}-edge", backend=args.backend)
     inspect_sparse(limit=min(args.rows, 2_000), namespace=args.tenant)
 
 

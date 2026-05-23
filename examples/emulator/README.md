@@ -47,6 +47,7 @@ python examples\emulator\patch_sparse_rows.py --backend polars --user-id user-00
 python examples\emulator\transaction_example.py --backend polars
 python examples\emulator\policy_examples.py --backend polars
 python examples\emulator\dataframe_model_examples.py --backend polars
+python examples\emulator\edge_case_examples.py --backend polars
 python examples\emulator\inspect_sparse_entities.py --limit 2000 --namespace tenant-a
 python examples\emulator\index_planning.py
 python examples\emulator\public_divvy_ancestor_test.py --backend polars --rows 50000 --workers 8
@@ -107,6 +108,36 @@ Run it with either DataFrame backend:
 ```powershell
 python examples\emulator\dataframe_model_examples.py
 python examples\emulator\dataframe_model_examples.py --backend polars
+```
+
+## Focused Edge-Case Test
+
+`edge_case_examples.py` is an executable checklist for behavior that is easy to
+miss in broad examples. It validates:
+
+- dry-run and read-only report generation without default Datastore client
+  construction
+- no Secret Manager module loading during offline planning
+- clear `would_write`, `wrote`, `failed`, and `skipped` report counts
+- deterministic `key_policy(...)` keys with custom id, namespace, and ancestor
+  fields
+- bound ancestor rejection for out-of-scope writes
+- all custom audit timestamp aliases: `created`, `created_at`, `modified`,
+  `modified_at`, and `updated_at`
+- batch sizing with an injectable fake client
+- compatibility with `google.api_core.retry.Retry(initial=2.0, multiplier=2.0,
+  deadline=40.0)`
+- skip-unchanged full writes and patch writes against the emulator
+- logical duplicate cleanup dry-run and delete execution
+- `dspdf(...)` source snapshots, derived write blocking, and alternate target
+  writes
+- schema inference for a kind containing mixed property types
+
+Run it with either DataFrame backend:
+
+```powershell
+python examples\emulator\edge_case_examples.py
+python examples\emulator\edge_case_examples.py --backend polars
 ```
 
 ## Public Dataset Ancestor Test
