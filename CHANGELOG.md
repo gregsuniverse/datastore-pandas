@@ -9,6 +9,34 @@ future releases. Version entries describe repository history only.
 
 No unreleased changes.
 
+## 0.3.0
+
+### Added
+
+- Added process-local write throttling and adaptive single-worker batch sizing.
+- Added richer write report telemetry for commit attempts, retry attempts,
+  throttling delay, batch sizes, batch latency, and patch backend usage.
+- Added masked partial-update commits with automatic compatibility fallback.
+- Added `CommitRetryContext`, `WriteThrottlePolicy`, `DynamicBatchPolicy`,
+  `AdaptiveWriteLimiter`, and `run_transaction` public exports.
+- Added cursor and eventual-consistency read options across pandas, Polars, and
+  bound accessors.
+- Added regression coverage for write reliability, cursor fetch options,
+  GeoPoint serialization, explicit empty property selections, and concurrent
+  report ordering.
+
+### Changed
+
+- Upsert and patch writes now use configurable retry handling with jitter and
+  typed retry classification for transient commit failures.
+- The Polars adapter now routes write and patch execution through the shared
+  datastore write backend for parity with pandas.
+- Concurrent write reports now preserve input chunk order.
+- `properties=[]` now explicitly encodes no properties instead of falling back to
+  all schema properties.
+- `GeoPointType` writes now convert to the native Datastore client GeoPoint
+  representation before serialization.
+
 ## 0.2.1
 
 ### Added
