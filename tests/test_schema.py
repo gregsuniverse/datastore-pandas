@@ -1,7 +1,8 @@
 import pandas as pd
 import pytest
 
-from datastore_pandas import Field, Int64Type, Schema, StringType, TimestampType
+from datastore_pandas import Field, GeoPoint, GeoPointType, Int64Type, Schema, StringType, TimestampType
+from datastore_pandas.convert import to_client_datastore_value
 from datastore_pandas.errors import SchemaError
 
 
@@ -62,6 +63,24 @@ def test_nullable_missing_values_are_omitted_by_default():
     assert excluded == []
 
 
+def test_explicit_empty_properties_encodes_no_properties():
+    schema = Schema(
+        kind="Doc",
+        properties={
+            "title": Field(StringType()),
+            "optional_note": Field(StringType()),
+        },
+    )
+
+    encoded, excluded = schema.encode_properties(
+        {"title": "present", "optional_note": "present"},
+        properties=[],
+    )
+
+    assert encoded == {}
+    assert excluded == []
+
+
 def test_nullable_fields_can_write_explicit_nulls():
     schema = Schema(
         kind="Doc",
@@ -81,3 +100,26 @@ def test_strict_schema_ignores_unknown_columns_when_value_is_missing():
     )
 
     schema.validate_row({"title": "present", "sparse_other_kind_column": pd.NA})
+
+
+def test_geopoint_type_converts_to_client_serializable_value():
+    from google.cloud import datastore
+    from google.cloud.datastore.helpers import GeoPoint as ClientGeoPoint
+    from google.cloud.datastore.helpers import entity_to_protobuf
+
+    value = GeoPointType().to_datastore({"latitude": 41.88, "longitude": -87.63})
+    client_value = to_client_datastore_value(value, client=object())
+
+    assert isinstance(client_value, ClientGeoPoint)
+
+    entity = datastore.Entity(key=datastore.Key("Doc", "a", project="fake-project"))
+    entity["point"] = client_value
+    entity_to_protobuf(entity)
+
+
+def test_geopoint_type_decodes_client_value_to_package_value():
+    from google.cloud.datastore.helpers import GeoPoint as ClientGeoPoint
+
+    value = GeoPointType().from_datastore(ClientGeoPoint(41.88, -87.63))
+
+    assert value == GeoPoint(41.88, -87.63)

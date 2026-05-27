@@ -31,3 +31,30 @@ def test_query_namespace_must_match_ancestor_namespace():
 
     with pytest.raises(QueryValidationError):
         spec.validate()
+
+
+def test_query_fetch_honors_cursor_and_eventual_consistency():
+    class FakeQuery:
+        def __init__(self) -> None:
+            self.fetch_kwargs = None
+
+        def fetch(self, **kwargs):
+            self.fetch_kwargs = kwargs
+            return []
+
+    query = FakeQuery()
+    spec = QuerySpec(
+        kind="Workout",
+        limit=10,
+        cursor=b"cursor-token",
+        consistency="eventual",
+    )
+
+    rows = list(spec.fetch(query))
+
+    assert rows == []
+    assert query.fetch_kwargs == {
+        "limit": 10,
+        "start_cursor": b"cursor-token",
+        "eventual": True,
+    }

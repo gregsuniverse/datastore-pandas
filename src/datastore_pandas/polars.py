@@ -7,28 +7,29 @@ Install with:
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Iterator, Sequence
+from typing import Any, Iterator, Literal, Sequence
 
-from datastore_pandas.batches import chunk_items, validate_unique_complete_keys
+from datastore_pandas.batches import validate_unique_complete_keys
 from datastore_pandas.convert import entity_to_record
 from datastore_pandas.errors import SchemaError
 from datastore_pandas.inference import infer_schema as infer_schema_for_query
 from datastore_pandas.io import (
     DEFAULT_COMMIT_RETRY,
+    DEFAULT_DYNAMIC_BATCH,
+    DEFAULT_WRITE_THROTTLE,
     WriteMode,
-    _commit_chunk,
     _filter_rows_for_plan,
     _get_client,
-    _patch_with_planned_results,
-    _patch_chunk,
+    _patch_items,
     _require_complete_keys,
+    _patch_with_planned_results,
+    _write_items,
     _write_requires_client,
     _write_with_planned_results,
 )
 from datastore_pandas.keys import DatastoreKey
 from datastore_pandas.planning import WritePlan, plan_write_rows
-from datastore_pandas.query import QuerySpec
+from datastore_pandas.query import QuerySpec, ReadConsistency
 from datastore_pandas.reports import WriteReport
 from datastore_pandas.schema import Schema
 
@@ -46,6 +47,8 @@ def read_datastore(
     ancestor: DatastoreKey | None = None,
     keys_only: bool = False,
     limit: int | None = None,
+    cursor: bytes | str | None = None,
+    consistency: ReadConsistency | None = None,
     include_key: bool = False,
     chunksize: int | None = None,
     infer_schema: bool = False,
@@ -67,6 +70,8 @@ def read_datastore(
             ancestor=ancestor,
             keys_only=keys_only,
             limit=limit,
+            cursor=cursor,
+            consistency=consistency,
             include_key=include_key,
             chunksize=chunksize or 1000,
             infer_schema=infer_schema,
@@ -91,6 +96,8 @@ def iter_datastore(
     ancestor: DatastoreKey | None = None,
     keys_only: bool = False,
     limit: int | None = None,
+    cursor: bytes | str | None = None,
+    consistency: ReadConsistency | None = None,
     include_key: bool = False,
     chunksize: int = 1000,
     infer_schema: bool = False,
@@ -119,9 +126,11 @@ def iter_datastore(
         ancestor=ancestor,
         keys_only=keys_only,
         limit=limit,
+        cursor=cursor,
+        consistency=consistency,
     )
     query = spec.build(client)
-    iterator = query.fetch(limit=limit)
+    iterator = spec.fetch(query, limit=limit)
     records: list[dict[str, Any]] = []
     for entity in iterator:
         records.append(entity_to_record(entity, schema=schema, include_key=include_key))
@@ -145,6 +154,8 @@ def to_datastore(
     read_only: bool = False,
     skip_unchanged: bool = False,
     retry: Any = DEFAULT_COMMIT_RETRY,
+    throttle: Any = DEFAULT_WRITE_THROTTLE,
+    adaptive_batching: Any = DEFAULT_DYNAMIC_BATCH,
 ) -> WriteReport:
     """Write a Polars DataFrame to Datastore."""
 
@@ -186,40 +197,22 @@ def to_datastore(
             batch_size=batch_size,
             max_workers=max_workers,
             retry=retry,
+            throttle=throttle,
+            adaptive_batching=adaptive_batching,
         )
 
-    if max_workers <= 1:
-        report = WriteReport()
-        for chunk in chunk_items(items, max_items=batch_size):
-            report.extend(
-                _commit_chunk(
-                    chunk,
-                    schema=schema,
-                    client=client,
-                    mode=mode,
-                    properties=properties,
-                    retry=retry,
-                )
-            )
-        return report
-
-    report = WriteReport()
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(
-                _commit_chunk,
-                chunk,
-                schema=schema,
-                client=client,
-                mode=mode,
-                properties=properties,
-                retry=retry,
-            )
-            for chunk in chunk_items(items, max_items=batch_size)
-        ]
-        for future in as_completed(futures):
-            report.extend(future.result())
-    return report
+    return _write_items(
+        items,
+        schema=schema,
+        client=client,
+        mode=mode,
+        properties=properties,
+        batch_size=batch_size,
+        max_workers=max_workers,
+        retry=retry,
+        throttle=throttle,
+        adaptive_batching=adaptive_batching,
+    )
 
 
 def patch_datastore(
@@ -234,6 +227,9 @@ def patch_datastore(
     read_only: bool = False,
     skip_unchanged: bool = False,
     retry: Any = DEFAULT_COMMIT_RETRY,
+    throttle: Any = DEFAULT_WRITE_THROTTLE,
+    adaptive_batching: Any = DEFAULT_DYNAMIC_BATCH,
+    patch_backend: Literal["auto", "native", "merge"] = "auto",
 ) -> WriteReport:
     """Partially update Datastore entities from a Polars DataFrame."""
 
@@ -271,34 +267,23 @@ def patch_datastore(
             batch_size=batch_size,
             max_workers=max_workers,
             retry=retry,
+            throttle=throttle,
+            adaptive_batching=adaptive_batching,
+            patch_backend=patch_backend,
         )
 
-    if max_workers <= 1:
-        report = WriteReport()
-        for chunk in chunk_items(items, max_items=batch_size):
-            report.extend(
-                _patch_chunk(
-                    chunk, schema=schema, client=client, properties=properties, retry=retry
-                )
-            )
-        return report
-
-    report = WriteReport()
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(
-                _patch_chunk,
-                chunk,
-                schema=schema,
-                client=client,
-                properties=properties,
-                retry=retry,
-            )
-            for chunk in chunk_items(items, max_items=batch_size)
-        ]
-        for future in as_completed(futures):
-            report.extend(future.result())
-    return report
+    return _patch_items(
+        items,
+        schema=schema,
+        client=client,
+        properties=properties,
+        batch_size=batch_size,
+        max_workers=max_workers,
+        retry=retry,
+        throttle=throttle,
+        adaptive_batching=adaptive_batching,
+        patch_backend=patch_backend,
+    )
 
 
 def plan_datastore_write(

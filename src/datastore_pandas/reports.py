@@ -59,6 +59,16 @@ class WriteReport:
     index_updates: int = 0
     dry_run: bool = False
     read_only: bool = False
+    commit_attempts: int = 0
+    commit_successes: int = 0
+    commit_failures: int = 0
+    retry_attempts: int = 0
+    retryable_failures: int = 0
+    throttled_seconds: float = 0.0
+    batch_sizes: list[int] = field(default_factory=list)
+    batch_latency_ms: list[int] = field(default_factory=list)
+    native_patches: int = 0
+    fallback_patches: int = 0
 
     @property
     def succeeded(self) -> int:
@@ -94,6 +104,16 @@ class WriteReport:
         self.results.extend(other.results)
         self.planned.extend(other.planned)
         self.index_updates += other.index_updates
+        self.commit_attempts += other.commit_attempts
+        self.commit_successes += other.commit_successes
+        self.commit_failures += other.commit_failures
+        self.retry_attempts += other.retry_attempts
+        self.retryable_failures += other.retryable_failures
+        self.throttled_seconds += other.throttled_seconds
+        self.batch_sizes.extend(other.batch_sizes)
+        self.batch_latency_ms.extend(other.batch_latency_ms)
+        self.native_patches += other.native_patches
+        self.fallback_patches += other.fallback_patches
 
     def raise_for_errors(self) -> None:
         errors = [result for result in self.results if not result.ok]

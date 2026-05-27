@@ -77,6 +77,15 @@ class QuerySpec:
             query.keys_only()
         return query
 
+    def fetch(self, query: Any, *, limit: int | None = None):
+        fetch_limit = self.limit if limit is None else limit
+        kwargs: dict[str, Any] = {"limit": fetch_limit}
+        if self.cursor is not None:
+            kwargs["start_cursor"] = self.cursor
+        if self.consistency == "eventual":
+            kwargs["eventual"] = True
+        return query.fetch(**kwargs)
+
     def _inferred_namespace(self) -> str | None:
         if self.ancestor is not None:
             return self.ancestor.namespace

@@ -10,6 +10,7 @@ from datastore_pandas.errors import (
 )
 from datastore_pandas.io import (
     CommitRetryPolicy,
+    CommitRetryContext,
     iter_datastore,
     patch_datastore,
     plan_datastore_write,
@@ -27,10 +28,21 @@ from datastore_pandas.inference import (
 from datastore_pandas.keys import DatastoreKey, KeyPart, KeySpec, key_policy
 from datastore_pandas.model import DatastoreDataFrame, dspdf
 from datastore_pandas.planning import WritePlan
-from datastore_pandas.query import IndexSuggestion, QueryPlan, QuerySpec, plan_indexes
+from datastore_pandas.query import (
+    IndexSuggestion,
+    QueryPlan,
+    QuerySpec,
+    ReadConsistency,
+    plan_indexes,
+)
 from datastore_pandas.reports import PlannedMutation, WriteAction, WriteReport, WriteResult
 from datastore_pandas.schema import Field, MissingPolicy, Schema
-from datastore_pandas.transaction import Transaction
+from datastore_pandas.throttle import (
+    AdaptiveWriteLimiter,
+    DynamicBatchPolicy,
+    WriteThrottlePolicy,
+)
+from datastore_pandas.transaction import Transaction, run_transaction
 from datastore_pandas.types import (
     ArrayType,
     BlobType,
@@ -50,9 +62,11 @@ __version__ = "0.2.1"
 
 __all__ = [
     "ArrayType",
+    "AdaptiveWriteLimiter",
     "AuditPolicy",
     "BlobType",
     "BoolType",
+    "CommitRetryContext",
     "CommitRetryPolicy",
     "DatastoreKey",
     "DatastoreFrame",
@@ -60,6 +74,7 @@ __all__ = [
     "DatastorePandasError",
     "DatastoreType",
     "DerivedFrameWriteError",
+    "DynamicBatchPolicy",
     "EmbeddedEntityType",
     "Field",
     "Float64Type",
@@ -76,6 +91,7 @@ __all__ = [
     "MixedTypePolicy",
     "QuerySpec",
     "QueryPlan",
+    "ReadConsistency",
     "Schema",
     "SchemaError",
     "SchemaInferenceReport",
@@ -88,6 +104,7 @@ __all__ = [
     "WritePlan",
     "WriteReport",
     "WriteResult",
+    "WriteThrottlePolicy",
     "iter_datastore",
     "kind",
     "dspdf",
@@ -99,5 +116,6 @@ __all__ = [
     "plan_datastore_write",
     "plan_indexes",
     "read_datastore",
+    "run_transaction",
     "to_datastore",
 ]

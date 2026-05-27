@@ -24,8 +24,9 @@ shape of the package:
   keys, arrays, geo points, and embedded entities
 - query construction for projections, keys-only queries, distinct projections,
   ancestor queries, filters, orderings, and limits
-- batched writes with bounded concurrency
-- read-merge-write patch updates for partial DataFrames
+- batched writes with bounded concurrency, retry telemetry, throttling, and
+  adaptive batch sizing
+- masked patch updates for partial DataFrames with a read-merge-write fallback
 - dry-run write planning, read-only write blocking, and skip-unchanged writes
 - instantiated kind accessors for bound schema/client/query defaults
 - deterministic key-policy and audit timestamp helpers
@@ -36,10 +37,9 @@ shape of the package:
 - an optional Polars adapter with matching read, chunked-read, write, and patch
   operations
 
-The package is not yet a complete production client. The current high-level write
-path relies on `google-cloud-datastore`; lower-level mutation support is still the
-right next step for property masks, compare-and-swap writes, generated-key result
-metadata, and conflict details.
+The package is not yet a complete production client. The current write path still
+relies on `google-cloud-datastore`; compare-and-swap writes, generated-key result
+metadata, and conflict details remain future work.
 
 ## License And Disclaimer
 
@@ -154,6 +154,11 @@ report = dsp.to_datastore(
 )
 report.raise_for_errors()
 ```
+
+Writes use retry handling for transient commit failures, a process-local write
+limiter, and adaptive batch sizing for single-worker loads. Pass `retry=...`,
+`throttle=...`, or `adaptive_batching=...` to tune those controls, or set them on
+`dsp.kind(...)` for a bound accessor.
 
 For Polars, install the optional extra and use the adapter module. The schema,
 query, key, batching, projection, and sparse-write behavior is shared:
@@ -344,7 +349,8 @@ The write path:
 - omits nullable missing values by default
 - excludes unindexed fields from indexes
 - rejects duplicate complete keys in one commit
-- chunks writes into bounded batches
+- chunks writes into bounded batches and reports commit attempts, retry attempts,
+  throttling delay, batch sizes, and batch latency
 
 For policy-aware writes, opt into planning:
 
@@ -523,9 +529,12 @@ dsp.patch_datastore(
 )
 ```
 
-The current implementation uses read-merge-write so omitted properties are
-preserved. A lower-level Datastore `Commit` backend should eventually replace this
-for native `property_mask` support.
+By default, patch writes use Datastore mutation property masks when the installed
+client exposes the lower-level commit API. That preserves omitted properties
+without reading the entity first. If the lower-level backend is unavailable,
+`patch_backend="auto"` falls back to read-merge-write; use
+`patch_backend="native"` to fail instead of falling back, or
+`patch_backend="merge"` to force the compatibility path.
 
 ## Transactions
 
@@ -538,8 +547,20 @@ with dsp.Transaction(client) as tx:
     tx.put(row, schema=counter_schema)
 ```
 
-Keep transactions small, retryable, and focused on read-modify-write logic.
-Bulk writes should use `to_datastore`.
+For retryable callbacks, use `run_transaction`:
+
+```python
+def increment(tx):
+    row = tx.get(counter_key, schema=counter_schema)
+    row["value"] += 1
+    tx.put(row, schema=counter_schema)
+    return row["value"]
+
+value = dsp.run_transaction(increment, client=client)
+```
+
+Keep transactions small and focused on read-modify-write logic. Bulk writes
+should use `to_datastore`.
 
 ## Index Planning
 
@@ -710,8 +731,6 @@ Current limitations:
 
 - `pytest` and `google-cloud-datastore` must be installed locally to run the full
   test and emulator flow.
-- `patch_datastore` uses read-merge-write instead of native mutation property
-  masks.
 - write reports do not yet include generated keys, entity versions, update times,
   or conflict details from lower-level mutation results.
 - compare-and-swap writes using `base_version` or `update_time` are not implemented
@@ -725,8 +744,7 @@ Current limitations:
 
 Useful next work:
 
-- add a lower-level Datastore `Commit` backend
-- support native property masks and conflict detection
+- add conflict detection to the lower-level commit backend
 - add generated-key allocation and result mapping
 - add aggregation helpers such as `count`
 - add Query Explain integration

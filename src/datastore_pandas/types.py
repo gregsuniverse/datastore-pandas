@@ -176,6 +176,19 @@ class GeoPointType(DatastoreType):
             return GeoPoint(float(value[0]), float(value[1]))
         raise SchemaError("GeoPoint values must be GeoPoint, mapping, or two-item sequence.")
 
+    def from_datastore(self, value: Any) -> GeoPoint | None:
+        if value is None:
+            return None
+        if isinstance(value, GeoPoint):
+            return value
+        if hasattr(value, "latitude") and hasattr(value, "longitude"):
+            return GeoPoint(float(value.latitude), float(value.longitude))
+        if isinstance(value, Mapping):
+            return GeoPoint(float(value["latitude"]), float(value["longitude"]))
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            return GeoPoint(float(value[0]), float(value[1]))
+        raise SchemaError("GeoPoint values must expose latitude and longitude.")
+
 
 @dataclass(frozen=True)
 class ArrayType(DatastoreType):

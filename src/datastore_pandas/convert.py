@@ -7,6 +7,7 @@ from typing import Any
 
 from datastore_pandas.keys import DatastoreKey
 from datastore_pandas.schema import Schema
+from datastore_pandas.types import GeoPoint
 
 
 def row_to_entity(
@@ -34,6 +35,10 @@ def to_client_datastore_value(value: Any, client: Any) -> Any:
 
     if isinstance(value, DatastoreKey):
         return value.to_client_key(client)
+    if isinstance(value, GeoPoint):
+        from google.cloud.datastore.helpers import GeoPoint as ClientGeoPoint
+
+        return ClientGeoPoint(value.latitude, value.longitude)
     if isinstance(value, (list, tuple)):
         return [to_client_datastore_value(item, client) for item in value]
     if isinstance(value, Mapping):

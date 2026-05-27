@@ -10,6 +10,7 @@ from datastore_pandas.batches import chunk_items
 from datastore_pandas.errors import SchemaError
 from datastore_pandas.keys import DatastoreKey
 from datastore_pandas.planning import WritePlan, _stable_value
+from datastore_pandas.query import ReadConsistency
 from datastore_pandas.reports import PlannedMutation, WriteReport, WriteResult
 from datastore_pandas.schema import Schema
 
@@ -35,6 +36,9 @@ class DatastoreFrame:
     batch_size: int = 400
     max_workers: int = 1
     retry: Any | None = None
+    throttle: Any | None = None
+    adaptive_batching: Any | None = None
+    patch_backend: Literal["auto", "native", "merge"] = "auto"
 
     @property
     def kind(self) -> str:
@@ -51,6 +55,8 @@ class DatastoreFrame:
         ancestor: DatastoreKey | None = None,
         keys_only: bool = False,
         limit: int | None = None,
+        cursor: bytes | str | None = None,
+        consistency: ReadConsistency | None = None,
         include_key: bool = False,
         chunksize: int | None = None,
     ):
@@ -67,6 +73,8 @@ class DatastoreFrame:
             ancestor=self.ancestor if ancestor is None else ancestor,
             keys_only=keys_only,
             limit=limit,
+            cursor=cursor,
+            consistency=consistency,
             include_key=include_key,
             chunksize=chunksize,
         )
@@ -82,6 +90,8 @@ class DatastoreFrame:
         ancestor: DatastoreKey | None = None,
         keys_only: bool = False,
         limit: int | None = None,
+        cursor: bytes | str | None = None,
+        consistency: ReadConsistency | None = None,
         include_key: bool = False,
         chunksize: int = 1000,
     ):
@@ -98,6 +108,8 @@ class DatastoreFrame:
             ancestor=self.ancestor if ancestor is None else ancestor,
             keys_only=keys_only,
             limit=limit,
+            cursor=cursor,
+            consistency=consistency,
             include_key=include_key,
             chunksize=chunksize,
         )
@@ -139,6 +151,8 @@ class DatastoreFrame:
         read_only: bool | None = None,
         skip_unchanged: bool = False,
         retry: Any | None = None,
+        throttle: Any | None = None,
+        adaptive_batching: Any | None = None,
     ) -> WriteReport:
         df = self._prepare_frame(df)
         self._validate_frame_scope(
@@ -163,6 +177,16 @@ class DatastoreFrame:
         active_retry = retry if retry is not None else self.retry
         if active_retry is not None:
             kwargs["retry"] = active_retry
+        active_throttle = throttle if throttle is not None else self.throttle
+        if active_throttle is not None:
+            kwargs["throttle"] = active_throttle
+        active_batching = (
+            adaptive_batching
+            if adaptive_batching is not None
+            else self.adaptive_batching
+        )
+        if active_batching is not None:
+            kwargs["adaptive_batching"] = active_batching
         return adapter.to_datastore(**kwargs)
 
     def patch(
@@ -176,6 +200,9 @@ class DatastoreFrame:
         read_only: bool | None = None,
         skip_unchanged: bool = False,
         retry: Any | None = None,
+        throttle: Any | None = None,
+        adaptive_batching: Any | None = None,
+        patch_backend: Literal["auto", "native", "merge"] | None = None,
     ) -> WriteReport:
         df = self._prepare_frame(df)
         self._validate_frame_scope(
@@ -199,6 +226,17 @@ class DatastoreFrame:
         active_retry = retry if retry is not None else self.retry
         if active_retry is not None:
             kwargs["retry"] = active_retry
+        active_throttle = throttle if throttle is not None else self.throttle
+        if active_throttle is not None:
+            kwargs["throttle"] = active_throttle
+        active_batching = (
+            adaptive_batching
+            if adaptive_batching is not None
+            else self.adaptive_batching
+        )
+        if active_batching is not None:
+            kwargs["adaptive_batching"] = active_batching
+        kwargs["patch_backend"] = patch_backend or self.patch_backend
         return adapter.patch_datastore(**kwargs)
 
     def plan_duplicate_cleanup(
@@ -261,6 +299,8 @@ class DatastoreFrame:
         dry_run: bool = True,
         read_only: bool | None = None,
         batch_size: int | None = None,
+        retry: Any | None = None,
+        throttle: Any | None = None,
     ) -> WriteReport:
         plan = self.plan_duplicate_cleanup(
             by=by,
@@ -277,6 +317,8 @@ class DatastoreFrame:
             plan,
             client=self.client,
             batch_size=batch_size or self.batch_size,
+            retry=retry if retry is not None else self.retry,
+            throttle=throttle if throttle is not None else self.throttle,
         )
 
     def with_scope(
@@ -288,6 +330,9 @@ class DatastoreFrame:
         read_only: bool | None = None,
         audit: AuditPolicy | None = None,
         retry: Any | None = None,
+        throttle: Any | None = None,
+        adaptive_batching: Any | None = None,
+        patch_backend: Literal["auto", "native", "merge"] | None = None,
     ) -> "DatastoreFrame":
         return replace(
             self,
@@ -297,6 +342,13 @@ class DatastoreFrame:
             read_only=self.read_only if read_only is None else read_only,
             audit=self.audit if audit is None else audit,
             retry=self.retry if retry is None else retry,
+            throttle=self.throttle if throttle is None else throttle,
+            adaptive_batching=(
+                self.adaptive_batching
+                if adaptive_batching is None
+                else adaptive_batching
+            ),
+            patch_backend=self.patch_backend if patch_backend is None else patch_backend,
         )
 
     def with_ancestor(self, ancestor: DatastoreKey) -> "DatastoreFrame":
@@ -400,6 +452,9 @@ def kind(
     batch_size: int = 400,
     max_workers: int = 1,
     retry: Any | None = None,
+    throttle: Any | None = None,
+    adaptive_batching: Any | None = None,
+    patch_backend: Literal["auto", "native", "merge"] = "auto",
 ) -> DatastoreFrame:
     """Create a bound accessor for one schema/kind."""
 
@@ -419,6 +474,9 @@ def kind(
         batch_size=batch_size,
         max_workers=max_workers,
         retry=retry,
+        throttle=throttle,
+        adaptive_batching=adaptive_batching,
+        patch_backend=patch_backend,
     )
 
 
@@ -448,18 +506,54 @@ def _delete_from_plan(
     *,
     client: Any | None,
     batch_size: int,
+    retry: Any | None,
+    throttle: Any | None,
 ) -> WriteReport:
-    from datastore_pandas.io import _get_client
+    from datastore_pandas.io import (
+        DEFAULT_COMMIT_RETRY,
+        DEFAULT_WRITE_THROTTLE,
+        _CommitFailure,
+        _add_commit_stats,
+        _coerce_write_limiter,
+        _execute_commit_with_retry,
+        _get_client,
+    )
 
     active_client = _get_client(client)
+    write_limiter = _coerce_write_limiter(
+        DEFAULT_WRITE_THROTTLE if throttle is None else throttle
+    )
+    active_retry = DEFAULT_COMMIT_RETRY if retry is None else retry
     report = WriteReport(planned=list(plan.mutations))
     for chunk in chunk_items(plan.mutations, max_items=batch_size):
         try:
-            with active_client.batch() as batch:
-                for mutation in chunk:
-                    if mutation.key is None:
-                        continue
-                    batch.delete(mutation.key.to_client_key(active_client))
+            def commit_once() -> None:
+                with active_client.batch() as batch:
+                    for mutation in chunk:
+                        if mutation.key is None:
+                            continue
+                        batch.delete(mutation.key.to_client_key(active_client))
+
+            stats = _execute_commit_with_retry(
+                commit_once,
+                operation_count=len(chunk),
+                retry=active_retry,
+                retry_safe=True,
+                write_limiter=write_limiter,
+            )
+            _add_commit_stats(report, stats)
+        except _CommitFailure as exc:
+            _add_commit_stats(report, exc.stats)
+            for mutation in chunk:
+                report.results.append(
+                    WriteResult(
+                        row_index=mutation.row_index,
+                        key=mutation.key,
+                        action="delete",
+                        error=str(exc.original),
+                    )
+                )
+            continue
         except Exception as exc:
             for mutation in chunk:
                 report.results.append(

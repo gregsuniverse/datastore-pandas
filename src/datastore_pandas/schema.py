@@ -89,7 +89,7 @@ class Schema:
         *,
         properties: list[str] | None = None,
     ) -> tuple[dict[str, Any], list[str]]:
-        names = properties or list(self.properties)
+        names = list(self.properties) if properties is None else properties
         encoded: dict[str, Any] = {}
         exclude_from_indexes: list[str] = []
         for name in names:
